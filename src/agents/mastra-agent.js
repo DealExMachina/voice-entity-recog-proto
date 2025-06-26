@@ -111,19 +111,32 @@ export class MastraAgent {
     console.log('📊 Audio buffer size:', audioBuffer.length, 'bytes');
     
     try {
-      // For Node.js, OpenAI client expects a readable stream or buffer with filename
-      // Create a proper stream-like object
-      const audioStream = new Blob([audioBuffer], { type: 'audio/wav' });
-      audioStream.name = 'audio.wav';
+      // For Node.js with OpenAI client, we need to create a File-like object
+      // Use the proper method for Node.js environment
       
-      console.log('📤 Sending audio to OpenAI Whisper API...');
+      // Method 1: Try using the toFile helper from OpenAI
+      const fs = await import('fs');
+      const path = await import('path');
+      
+      // Write buffer to temporary file
+      const tempPath = path.join('/tmp', `audio_${Date.now()}.wav`);
+      await fs.promises.writeFile(tempPath, audioBuffer);
+      
+      console.log('📤 Sending audio file to OpenAI Whisper API...');
       
       const response = await this.openai.audio.transcriptions.create({
-        file: audioStream,
+        file: fs.createReadStream(tempPath),
         model: 'whisper-1',
         language: 'en',
         response_format: 'text'
       });
+
+      // Clean up temp file
+      try {
+        await fs.promises.unlink(tempPath);
+      } catch (cleanupError) {
+        console.warn('⚠️ Failed to cleanup temp file:', cleanupError.message);
+      }
 
       console.log('✅ Whisper transcription successful:', response);
       return response;
@@ -134,30 +147,7 @@ export class MastraAgent {
         type: error.type
       });
       
-      // If Blob fails, try the most basic approach
-      try {
-        console.log('🔄 Trying direct buffer upload...');
-        
-        // Create a simple readable stream from buffer
-        const fs = await import('fs');
-        const { Readable } = await import('stream');
-        
-        const audioStream = Readable.from(audioBuffer);
-        audioStream.path = 'audio.wav';
-        
-        const response = await this.openai.audio.transcriptions.create({
-          file: audioStream,
-          model: 'whisper-1',
-          language: 'en',
-          response_format: 'text'
-        });
-        
-        console.log('✅ Direct buffer method successful:', response);
-        return response;
-      } catch (secondError) {
-        console.error('❌ Second attempt failed:', secondError.message);
-        throw error; // Throw original error
-      }
+      throw error;
     }
   }
 
