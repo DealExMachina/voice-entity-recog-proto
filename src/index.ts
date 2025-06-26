@@ -145,7 +145,7 @@ wss.on('connection', (ws: WebSocket) => {
 app.use('/api', apiRoutes);
 
 // Serve main app (production optimized HTML in production)
-app.get('/', (req, res) => {
+app.get('/', (req: Request, res: Response) => {
   const isProduction = process.env.NODE_ENV === 'production';
   const htmlFile = isProduction ? '../public/index.production.html' : '../public/index.html';
   const fullPath = path.join(__dirname, htmlFile);

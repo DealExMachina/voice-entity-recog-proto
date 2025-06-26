@@ -30,7 +30,7 @@ const upload = multer({
   limits: {
     fileSize: 10 * 1024 * 1024 // 10MB limit
   },
-  fileFilter: (req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
+  fileFilter: (req: Request, file: any, cb: FileFilterCallback) => {
     // Log upload details for debugging
     console.log('File upload debug:', {
       originalname: file.originalname,
