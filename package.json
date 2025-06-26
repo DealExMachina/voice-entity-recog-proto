@@ -1,29 +1,30 @@
 {
-  "name": "mastra-voice-entity-extraction",
+  "name": "sales-buddy",
   "version": "1.0.0",
-  "description": "Mastra prototype for entity extraction from voice chat with DuckDB storage via MCP",
-  "main": "src/index.js",
+  "description": "AI-powered sales conversation analysis with entity extraction and DuckDB storage",
+  "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "build": "echo 'No build step required'",
-    "test": "node tests/test-basic.js",
-    "test:watch": "node --watch tests/test-basic.js",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "concurrently \"tsc --watch\" \"nodemon dist/index.js\"",
+    "dev:ts": "tsx watch src/index.ts",
+    "test": "node --import tsx --require dotenv/config tests/test-basic.ts",
+    "test:watch": "node --loader tsx --watch tests/test-basic.ts",
     "health": "curl -f http://localhost:3000/api/health || exit 1",
-    "setup": "./scripts/setup-keys.sh",
-    "config": "./scripts/check-config.sh",
-    "deploy": "./scripts/deploy-koyeb.sh",
-    "deploy:check": "echo 'Deploy via GitHub Actions or Koyeb CLI'",
-    "clean": "rm -rf node_modules package-lock.json && npm install",
-    "logs": "echo 'Use: docker logs <container> or check deployment platform'"
+    "clean": "rm -rf dist && rm -rf node_modules package-lock.json && npm install",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts"
   },
   "keywords": [
-    "mastra",
+    "sales",
+    "ai",
     "voice",
     "entity-extraction",
     "mcp",
-    "duckdb"
+    "duckdb",
+    "typescript"
   ],
   "author": "",
   "license": "MIT",
@@ -39,6 +40,18 @@
     "ws": "^8.14.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.23",
+    "@types/multer": "^1.4.13",
+    "@types/node": "^20.19.1",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.57.1",
+    "nodemon": "^3.1.10",
+    "prettier": "^3.6.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
   }
 }

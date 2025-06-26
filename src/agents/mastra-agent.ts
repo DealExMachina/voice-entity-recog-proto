@@ -1,11 +1,44 @@
 import OpenAI from 'openai';
 import { Mistral } from '@mistralai/mistralai';
+import fs from 'fs';
+import path from 'path';
+import type { 
+  AIProvider, 
+  EntityType, 
+  ExtractedEntity, 
+  TranscriptionResponse,
+  EntityExtractionResponse 
+} from '../types/index.js';
+
+interface ProviderStatus {
+  current: AIProvider;
+  available: AIProvider[];
+  openaiAvailable: boolean;
+  mistralAvailable: boolean;
+}
+
+interface EntityAnalysis {
+  totalEntities: number;
+  entityCounts: Record<string, number>;
+  insights: string[];
+  relationships: string[];
+}
+
+interface VoiceProcessingResult {
+  transcription: string;
+  entities: ExtractedEntity[];
+  analysis: EntityAnalysis;
+  processedAt: string;
+}
 
 export class MastraAgent {
+  private openai: OpenAI | null = null;
+  private mistral: Mistral | null = null;
+  private aiProvider: AIProvider;
+  private readonly entityTypes: EntityType[];
+
   constructor() {
-    this.openai = null;
-    this.mistral = null;
-    this.aiProvider = process.env.AI_PROVIDER || 'openai';
+    this.aiProvider = (process.env.AI_PROVIDER as AIProvider) || 'openai';
     
     // Initialize OpenAI if API key is available
     if (process.env.OPENAI_API_KEY) {
@@ -22,13 +55,13 @@ export class MastraAgent {
     }
     
     this.entityTypes = [
-      'person', 'organization', 'location', 'event', 
-      'product', 'financial', 'contact', 'date', 'time'
+      'person', 'organization', 'location', 'financial', 
+      'product', 'contact', 'date'
     ];
   }
 
-  async initialize() {
-    const availableProviders = [];
+  async initialize(): Promise<boolean> {
+    const availableProviders: string[] = [];
     if (this.openai) availableProviders.push('OpenAI');
     if (this.mistral) availableProviders.push('Mistral');
     
@@ -42,8 +75,8 @@ export class MastraAgent {
   }
 
   // Method to switch AI provider
-  setAiProvider(provider) {
-    const validProviders = ['openai', 'mistral', 'demo'];
+  setAiProvider(provider: AIProvider): void {
+    const validProviders: AIProvider[] = ['openai', 'mistral', 'demo'];
     if (!validProviders.includes(provider)) {
       throw new Error(`Invalid AI provider: ${provider}. Valid options: ${validProviders.join(', ')}`);
     }
@@ -61,15 +94,15 @@ export class MastraAgent {
   }
 
   // Get available providers
-  getAvailableProviders() {
-    const providers = ['demo'];
+  getAvailableProviders(): AIProvider[] {
+    const providers: AIProvider[] = ['demo'];
     if (this.openai) providers.push('openai');
     if (this.mistral) providers.push('mistral');
     return providers;
   }
 
   // Get current provider status
-  getProviderStatus() {
+  getProviderStatus(): ProviderStatus {
     return {
       current: this.aiProvider,
       available: this.getAvailableProviders(),
@@ -79,14 +112,14 @@ export class MastraAgent {
   }
 
   // Transcribe audio using available AI provider
-  async transcribe(audioBuffer) {
+  async transcribe(audioBuffer: Buffer): Promise<string> {
     if (this.aiProvider === 'demo' || (!this.openai && !this.mistral)) {
       // Fallback for demo purposes when no API key
       return 'Demo transcription: We need to schedule a meeting with John Smith from Acme Corp next Tuesday at 3 PM to discuss the new product launch budget of $50,000.';
     }
 
     try {
-      let transcription;
+      let transcription: string;
       
       if (this.aiProvider === 'openai' && this.openai) {
         transcription = await this.transcribeWithOpenAI(audioBuffer);
@@ -106,18 +139,15 @@ export class MastraAgent {
   }
 
   // OpenAI-specific transcription
-  async transcribeWithOpenAI(audioBuffer) {
+  private async transcribeWithOpenAI(audioBuffer: Buffer): Promise<string> {
     console.log('🎤 Attempting OpenAI Whisper transcription...');
     console.log('📊 Audio buffer size:', audioBuffer.length, 'bytes');
     
+    if (!this.openai) {
+      throw new Error('OpenAI client not initialized');
+    }
+    
     try {
-      // For Node.js with OpenAI client, we need to create a File-like object
-      // Use the proper method for Node.js environment
-      
-      // Method 1: Try using the toFile helper from OpenAI
-      const fs = await import('fs');
-      const path = await import('path');
-      
       // Write buffer to temporary file
       const tempPath = path.join('/tmp', `audio_${Date.now()}.wav`);
       await fs.promises.writeFile(tempPath, audioBuffer);
@@ -135,16 +165,17 @@ export class MastraAgent {
       try {
         await fs.promises.unlink(tempPath);
       } catch (cleanupError) {
-        console.warn('⚠️ Failed to cleanup temp file:', cleanupError.message);
+        console.warn('⚠️ Failed to cleanup temp file:', cleanupError);
       }
 
       console.log('✅ Whisper transcription successful:', response);
       return response;
-    } catch (error) {
+    } catch (error: unknown) {
+      const err = error as any;
       console.error('❌ Whisper API error details:', {
-        message: error.message,
-        status: error.status,
-        type: error.type
+        message: err.message,
+        status: err.status,
+        type: err.type
       });
       
       throw error;
@@ -152,13 +183,13 @@ export class MastraAgent {
   }
 
   // Extract entities from text using AI provider
-  async extractEntities(text) {
+  async extractEntities(text: string): Promise<ExtractedEntity[]> {
     if (this.aiProvider === 'demo' || (!this.openai && !this.mistral)) {
       return this.generateDemoEntities(text);
     }
 
     try {
-      let entities;
+      let entities: ExtractedEntity[];
       
       if (this.aiProvider === 'openai' && this.openai) {
         entities = await this.extractWithOpenAI(text);
@@ -173,9 +204,7 @@ export class MastraAgent {
       return entities.map(entity => ({
         ...entity,
         confidence: entity.confidence || 0.8,
-        context: entity.context || text.substring(0, 100),
-        extractedAt: new Date().toISOString(),
-        provider: this.aiProvider
+        context: entity.context || text.substring(0, 100)
       }));
 
     } catch (error) {
@@ -186,7 +215,11 @@ export class MastraAgent {
   }
 
   // OpenAI-specific entity extraction
-  async extractWithOpenAI(text) {
+  private async extractWithOpenAI(text: string): Promise<ExtractedEntity[]> {
+    if (!this.openai) {
+      throw new Error('OpenAI client not initialized');
+    }
+
     const systemPrompt = `You are an expert Named Entity Recognition (NER) system specialized in extracting structured business information from conversational text.
 
 CRITICAL INSTRUCTIONS:
@@ -200,12 +233,10 @@ ENTITY TYPES TO EXTRACT:
 - person: Full names of individuals (not titles or roles)
 - organization: Company names, departments, institutions
 - location: Cities, countries, addresses, buildings
-- event: Meetings, conferences, appointments, deadlines
 - product: Specific products, services, or projects
 - financial: Monetary amounts, budgets, costs, revenue
 - contact: Email addresses, phone numbers
 - date: Specific dates, days of week, relative dates
-- time: Clock times, time ranges, durations
 
 EXAMPLE OUTPUT FORMAT:
 {
@@ -237,7 +268,11 @@ EXAMPLE OUTPUT FORMAT:
       response_format: { type: "json_object" }
     });
 
-    const extractedText = response.choices[0].message.content.trim();
+    const extractedText = response.choices[0]?.message?.content?.trim();
+    if (!extractedText) {
+      throw new Error('No response from OpenAI');
+    }
+    
     console.log('📥 OpenAI response:', extractedText);
     
     try {
@@ -251,7 +286,11 @@ EXAMPLE OUTPUT FORMAT:
   }
 
   // Mistral-specific entity extraction
-  async extractWithMistral(text) {
+  private async extractWithMistral(text: string): Promise<ExtractedEntity[]> {
+    if (!this.mistral) {
+      throw new Error('Mistral client not initialized');
+    }
+
     const prompt = this.getEntityExtractionPrompt(text);
 
     const response = await this.mistral.chat.complete({
@@ -270,7 +309,11 @@ EXAMPLE OUTPUT FORMAT:
       maxTokens: 1000
     });
 
-    const extractedText = response.choices[0].message.content.trim();
+    const content = response.choices[0]?.message?.content;
+    const extractedText = typeof content === 'string' ? content.trim() : '';
+    if (!extractedText) {
+      throw new Error('No response from Mistral');
+    }
     
     try {
       return JSON.parse(extractedText);
@@ -281,7 +324,7 @@ EXAMPLE OUTPUT FORMAT:
   }
 
   // Common prompt for entity extraction
-  getEntityExtractionPrompt(text) {
+  private getEntityExtractionPrompt(text: string): string {
     return `
       Extract entities from the following text and categorize them. Return a JSON array of entities with the following structure:
       {
@@ -295,12 +338,10 @@ EXAMPLE OUTPUT FORMAT:
       - person: People's names
       - organization: Companies, departments, teams
       - location: Places, addresses, cities, countries
-      - event: Meetings, appointments, deadlines
       - product: Items, services, features
       - financial: Money amounts, budgets, costs
       - contact: Email addresses, phone numbers
       - date: Dates and date ranges
-      - time: Times and time ranges
 
       Text to analyze: "${text}"
 
@@ -309,28 +350,33 @@ EXAMPLE OUTPUT FORMAT:
   }
 
   // Generate demo entities for testing when API is not available
-  generateDemoEntities(text) {
-    const demoEntities = [];
+  private generateDemoEntities(text: string): ExtractedEntity[] {
+    const demoEntities: ExtractedEntity[] = [];
     
     // Simple pattern matching for demo purposes
-    const patterns = {
+    const patterns: Record<EntityType, RegExp> = {
       person: /\b[A-Z][a-z]+ [A-Z][a-z]+\b/g,
       organization: /\b[A-Z][a-z]+ (Corp|Inc|LLC|Company|Organization)\b/g,
       financial: /\$[\d,]+/g,
       date: /\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|next week|tomorrow|today)\b/gi,
-      time: /\b\d{1,2}:\d{2}\s?(AM|PM|am|pm)?\b/g
+      location: /\b[A-Z][a-z]+ (City|Street|Avenue|Road)\b/g,
+      product: /\b[A-Z][a-z]+ (Product|Service|Platform)\b/g,
+      contact: /\b[\w.-]+@[\w.-]+\.\w+\b/g
     };
 
     Object.entries(patterns).forEach(([type, pattern]) => {
       const matches = text.match(pattern);
       if (matches) {
         matches.forEach(match => {
+          const startIndex = text.indexOf(match);
+          const contextStart = Math.max(0, startIndex - 20);
+          const contextEnd = Math.min(text.length, startIndex + match.length + 20);
+          
           demoEntities.push({
-            type,
+            type: type as EntityType,
             value: match.trim(),
             confidence: 0.85,
-            context: text.substring(Math.max(0, text.indexOf(match) - 20), text.indexOf(match) + match.length + 20),
-            extractedAt: new Date().toISOString()
+            context: text.substring(contextStart, contextEnd)
           });
         });
       }
@@ -340,8 +386,8 @@ EXAMPLE OUTPUT FORMAT:
   }
 
   // Analyze entities for insights
-  async analyzeEntities(entities) {
-    const analysis = {
+  async analyzeEntities(entities: ExtractedEntity[]): Promise<EntityAnalysis> {
+    const analysis: EntityAnalysis = {
       totalEntities: entities.length,
       entityCounts: {},
       insights: [],
@@ -356,7 +402,7 @@ EXAMPLE OUTPUT FORMAT:
     // Generate insights
     const people = entities.filter(e => e.type === 'person');
     const organizations = entities.filter(e => e.type === 'organization');
-    const events = entities.filter(e => e.type === 'event');
+    const events = entities.filter(e => e.type === 'date');
 
     if (people.length > 0 && organizations.length > 0) {
       analysis.insights.push(`Conversation involves ${people.length} people and ${organizations.length} organizations`);
@@ -370,7 +416,7 @@ EXAMPLE OUTPUT FORMAT:
   }
 
   // Process voice input end-to-end
-  async processVoiceInput(audioBuffer) {
+  async processVoiceInput(audioBuffer: Buffer): Promise<VoiceProcessingResult> {
     try {
       // Step 1: Transcribe audio
       const transcription = await this.transcribe(audioBuffer);
@@ -391,5 +437,9 @@ EXAMPLE OUTPUT FORMAT:
       console.error('Voice processing error:', error);
       throw error;
     }
+  }
+
+  getEntityTypes(): EntityType[] {
+    return [...this.entityTypes];
   }
 } 

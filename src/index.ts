@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Application } from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
@@ -11,13 +11,18 @@ import { MastraAgent } from './agents/mastra-agent.js';
 import { McpService } from './services/mcp-service.js';
 import { generalLimiter, healthLimiter } from './middleware/rateLimiter.js';
 import apiRoutes from './routes/api.js';
+import type { 
+  WebSocketMessage, 
+  VoiceDataMessage, 
+  EntitiesExtractedMessage 
+} from './types/index.js';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
+const app: Application = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
@@ -34,10 +39,10 @@ app.use('/api/health', healthLimiter);
 app.use('/api', generalLimiter);
 
 // Initialize services
-let mastraAgent;
-let mcpService;
+let mastraAgent: MastraAgent;
+let mcpService: McpService;
 
-async function initializeServices() {
+async function initializeServices(): Promise<void> {
   try {
     // Initialize database
     await initializeDatabase();
@@ -69,29 +74,49 @@ wss.on('connection', (ws) => {
   
   ws.on('message', async (message) => {
     try {
-      const data = JSON.parse(message);
+      const data = JSON.parse(message.toString()) as WebSocketMessage;
       
       if (data.type === 'voice_data') {
+        const voiceData = data as VoiceDataMessage;
+        
         // Handle real-time voice data
-        const transcription = await mastraAgent.transcribe(data.audio);
+        const audioBuffer = Buffer.from(voiceData.audio, 'base64');
+        const transcription = await mastraAgent.transcribe(audioBuffer);
         const entities = await mastraAgent.extractEntities(transcription);
         
-        // Store entities via MCP
-        await mcpService.storeEntities(entities);
+        // Store conversation via MCP
+        const conversationResult = await mcpService.storeConversation({
+          transcription,
+          audio_duration: 0, // Duration not available in real-time
+          metadata: {
+            provider: mastraAgent.getProviderStatus().current,
+            processedAt: new Date().toISOString(),
+            entityCount: entities.length
+          }
+        });
+
+        // Store entities if we have a conversation ID
+        if (conversationResult.conversationId) {
+          await mcpService.storeEntities(entities, conversationResult.conversationId);
+        }
         
         // Send results back to client
-        ws.send(JSON.stringify({
+        const response: EntitiesExtractedMessage = {
           type: 'entities_extracted',
           transcription,
-          entities
-        }));
+          entities,
+          conversationId: conversationResult.conversationId || ''
+        };
+        
+        ws.send(JSON.stringify(response));
       }
     } catch (error) {
       console.error('WebSocket error:', error);
-      ws.send(JSON.stringify({
+      const errorMessage: WebSocketMessage = {
         type: 'error',
-        message: error.message
-      }));
+        error: error instanceof Error ? error.message : 'Unknown WebSocket error'
+      };
+      ws.send(JSON.stringify(errorMessage));
     }
   });
 
@@ -108,14 +133,45 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
+// Global error handler
+app.use((error: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Global error handler:', error);
+  res.status(500).json({
+    success: false,
+    error: 'Internal server error',
+    message: error.message
+  });
+});
+
 // Start server
-async function startServer() {
+async function startServer(): Promise<void> {
   await initializeServices();
   
   server.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
     console.log(`📊 Database: ${process.env.DB_PATH || './data/entities.db'}`);
+    console.log(`🎯 AI Provider: ${process.env.AI_PROVIDER || 'openai'}`);
   });
 }
 
-startServer().catch(console.error); 
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('🛑 SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', async () => {
+  console.log('🛑 SIGINT received, shutting down gracefully');
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
+  });
+});
+
+startServer().catch((error) => {
+  console.error('❌ Failed to start server:', error);
+  process.exit(1);
+}); 
