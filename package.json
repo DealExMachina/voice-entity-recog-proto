@@ -11,7 +11,6 @@
     "dev:ts": "tsx watch src/index.ts",
     "test": "node --import tsx --require dotenv/config tests/test-basic.ts",
     "test:watch": "node --loader tsx --watch tests/test-basic.ts",
-    "heroku-postbuild": "npm run build",
     "health": "curl -f http://localhost:3000/api/health || exit 1",
     "clean": "rm -rf dist && rm -rf node_modules package-lock.json && npm install",
     "type-check": "tsc --noEmit",

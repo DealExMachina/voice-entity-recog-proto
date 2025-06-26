@@ -35,6 +35,8 @@ const createRateLimiter = (options: RateLimitOptions = {}): RequestHandler => {
     },
     standardHeaders: true,
     legacyHeaders: false,
+    // Skip rate limiting validation for trusted proxies
+    validate: false,
     handler: (req: Request, res: Response) => {
       console.log(`Rate limit exceeded for IP: ${req.ip}, Path: ${req.path}`);
       res.status(429).json({
