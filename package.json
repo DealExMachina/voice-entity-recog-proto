@@ -11,6 +11,7 @@
     "dev:ts": "tsx watch src/index.ts",
     "test": "node --import tsx --require dotenv/config tests/test-basic.ts",
     "test:watch": "node --loader tsx --watch tests/test-basic.ts",
+    "heroku-postbuild": "npm run build",
     "health": "curl -f http://localhost:3000/api/health || exit 1",
     "clean": "rm -rf dist && rm -rf node_modules package-lock.json && npm install",
     "type-check": "tsc --noEmit",
@@ -37,6 +38,7 @@
     "express-rate-limit": "^7.5.1",
     "multer": "^1.4.5-lts.1",
     "openai": "^4.20.0",
+    "typescript": "^5.8.3",
     "ws": "^8.14.2"
   },
   "devDependencies": {
@@ -51,7 +53,6 @@
     "eslint": "^8.57.1",
     "nodemon": "^3.1.10",
     "prettier": "^3.6.1",
-    "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "tsx": "^4.20.3"
   }
 }
