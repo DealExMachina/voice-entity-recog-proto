@@ -1,8 +1,8 @@
-import express, { Application } from 'express';
+import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import { createServer } from 'http';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -85,10 +85,10 @@ async function initializeServices(): Promise<void> {
 }
 
 // WebSocket connections for real-time updates
-wss.on('connection', (ws) => {
+wss.on('connection', (ws: WebSocket) => {
   console.log('📡 New WebSocket connection');
   
-  ws.on('message', async (message) => {
+  ws.on('message', async (message: any) => {
     try {
       const data = JSON.parse(message.toString()) as WebSocketMessage;
       
@@ -151,7 +151,7 @@ app.get('/', (req, res) => {
   const fullPath = path.join(__dirname, htmlFile);
   
   // Send the appropriate HTML file based on environment
-  res.sendFile(fullPath, (err) => {
+  res.sendFile(fullPath, (err?: Error) => {
     if (err && isProduction) {
       // Fallback to development HTML if production file doesn't exist
       console.warn('Production HTML not found, falling back to development HTML');
