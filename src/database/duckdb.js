@@ -140,7 +140,7 @@ export async function insertConversation(conversation) {
   
   // Ensure all parameters are properly defined and not undefined
   const transcription = String(conversation.transcription || '');
-  const audioDuration = conversation.audioDuration === null ? null : Number(conversation.audioDuration || 0);
+  const audioDuration = conversation.audio_duration === null ? null : Number(conversation.audio_duration || 0);
   const metadata = JSON.stringify(conversation.metadata || {});
   
   const params = [transcription, audioDuration, metadata];
@@ -173,7 +173,7 @@ export async function insertEntity(entity) {
   const value = entity.value || '';
   const confidence = entity.confidence || 0.8;
   const context = entity.context || '';
-  const conversationId = entity.conversationId === null ? null : entity.conversationId;
+  const conversationId = entity.source_conversation_id === null ? null : entity.source_conversation_id;
   const metadata = JSON.stringify(entity.metadata || {});
   
   const params = [type, value, confidence, context, conversationId, metadata];
@@ -208,4 +208,10 @@ export async function getAllEntities(limit = 100) {
     LIMIT $1
   `;
   return executeQuery(sql, [limit]);
+}
+
+export async function getConversationById(id) {
+  const sql = `SELECT * FROM conversations WHERE id = $1`;
+  const result = await executeQuery(sql, [id]);
+  return result.length > 0 ? result[0] : null;
 } 

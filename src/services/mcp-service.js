@@ -1,11 +1,4 @@
-import { 
-  insertEntity, 
-  insertConversation, 
-  getAllEntities, 
-  getEntitiesByType,
-  getConversationById,
-  initializeDatabase 
-} from '../database/duckdb-simple.ts';
+import { insertEntity, insertConversation, getAllEntities, getEntitiesByType, getConversationById, initializeDatabase } from '../database/duckdb.js';
 
 export class McpService {
   constructor() {
