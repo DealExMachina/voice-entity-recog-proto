@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mastra Voice Entity Extraction</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .recording {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .entity-card {
+            backdrop-filter: blur(8px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .entity-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.02);
+        }
+
+        .glass-effect {
+            backdrop-filter: blur(16px);
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border: 1px solid #e2e8f0;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+            border-color: #cbd5e1;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .status-indicator {
+            animation: breathe 2s ease-in-out infinite;
+        }
+
+        @keyframes breathe {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.6s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        border: "hsl(214.3 31.8% 91.4%)",
+                        input: "hsl(214.3 31.8% 91.4%)",
+                        ring: "hsl(222.2 84% 4.9%)",
+                        background: "hsl(0 0% 100%)",
+                        foreground: "hsl(222.2 84% 4.9%)",
+                        primary: {
+                            DEFAULT: "hsl(222.2 47.4% 11.2%)",
+                            foreground: "hsl(210 40% 98%)",
+                        },
+                        secondary: {
+                            DEFAULT: "hsl(210 40% 96%)",
+                            foreground: "hsl(222.2 84% 4.9%)",
+                        },
+                        muted: {
+                            DEFAULT: "hsl(210 40% 96%)",
+                            foreground: "hsl(215.4 16.3% 46.9%)",
+                        },
+                        accent: {
+                            DEFAULT: "hsl(210 40% 96%)",
+                            foreground: "hsl(222.2 84% 4.9%)",
+                        },
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50 min-h-screen antialiased">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- Header -->
+        <div class="text-center mb-12 fade-in">
+            <div class="flex items-center justify-center mb-4">
+                <div class="p-3 rounded-full bg-gradient-to-br from-slate-100 to-gray-100 shadow-sm mr-4">
+                    <i data-lucide="mic" class="w-8 h-8 text-slate-600"></i>
+                </div>
+                <h1 class="text-4xl font-light text-slate-800 tracking-tight">
+                    Mastra
+                    <span class="font-medium text-slate-600">Voice Entity Extraction</span>
+                </h1>
+            </div>
+            <p class="text-slate-500 text-lg font-light max-w-2xl mx-auto">
+                Intelligent entity extraction from voice conversations with real-time storage via Model Context Protocol
+            </p>
+        </div>
+
+        <!-- Status Panel -->
+        <div class="glass-effect rounded-2xl p-6 mb-8 fade-in shadow-sm">
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center space-x-3">
+                    <div class="status-indicator w-2 h-2 bg-emerald-400 rounded-full"></div>
+                    <h2 class="text-lg font-medium text-slate-700">System Status</h2>
+                </div>
+                <button id="refreshStatus" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                    <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                    <span>Refresh</span>
+                </button>
+            </div>
+            <div id="statusDisplay" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Status items will be populated here -->
+            </div>
+        </div>
+
+        <!-- Main Interface -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Voice Input Panel -->
+            <div class="glass-effect rounded-2xl p-6 shadow-sm fade-in">
+                <div class="flex items-center space-x-3 mb-6">
+                    <i data-lucide="mic" class="w-5 h-5 text-slate-600"></i>
+                    <h2 class="text-lg font-medium text-slate-700">Voice Input</h2>
+                </div>
+                
+                <!-- Recording Controls -->
+                <div class="text-center mb-8">
+                    <button id="recordBtn" class="group relative bg-gradient-to-br from-red-50 to-rose-100 border border-red-200 text-red-700 px-10 py-6 rounded-2xl text-lg font-medium hover:from-red-100 hover:to-rose-200 transition-all duration-300 transform hover:scale-105">
+                        <div class="flex items-center justify-center space-x-3">
+                            <div class="relative">
+                                <i data-lucide="mic" class="w-6 h-6"></i>
+                                <div class="absolute inset-0 rounded-full bg-red-400 opacity-0 group-hover:opacity-20 transition-opacity"></div>
+                            </div>
+                            <span>Start Recording</span>
+                        </div>
+                    </button>
+                    <div id="recordingStatus" class="mt-3 text-sm text-slate-500 font-light"></div>
+                </div>
+
+                <!-- Divider -->
+                <div class="relative my-8">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-slate-200"></div>
+                    </div>
+                    <div class="relative flex justify-center text-sm">
+                        <span class="px-3 bg-white text-slate-400 font-light">or</span>
+                    </div>
+                </div>
+
+                <!-- File Upload Alternative -->
+                <div class="space-y-4">
+                    <div class="flex items-center space-x-2 text-slate-600">
+                        <i data-lucide="upload" class="w-4 h-4"></i>
+                        <h3 class="text-sm font-medium">Upload Audio File</h3>
+                    </div>
+                    <div class="border-2 border-dashed border-slate-200 rounded-xl p-6 hover:border-slate-300 transition-colors">
+                        <input type="file" id="audioUpload" accept="audio/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-slate-50 file:text-slate-600 hover:file:bg-slate-100">
+                    </div>
+                    <button id="uploadBtn" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium w-full flex items-center justify-center space-x-2">
+                        <i data-lucide="play" class="w-4 h-4"></i>
+                        <span>Process Audio</span>
+                    </button>
+                </div>
+
+                <!-- Text Input Alternative -->
+                <div class="space-y-4 mt-8">
+                    <div class="flex items-center space-x-2 text-slate-600">
+                        <i data-lucide="type" class="w-4 h-4"></i>
+                        <h3 class="text-sm font-medium">Text Input</h3>
+                    </div>
+                    <textarea id="textInput" placeholder="Enter text for entity extraction..." 
+                        class="w-full p-4 border border-slate-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent bg-white/50 backdrop-blur-sm text-slate-700 placeholder-slate-400" rows="3"></textarea>
+                    <button id="processTextBtn" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium w-full flex items-center justify-center space-x-2">
+                        <i data-lucide="zap" class="w-4 h-4"></i>
+                        <span>Extract Entities</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results Panel -->
+            <div class="glass-effect rounded-2xl p-6 shadow-sm fade-in">
+                <div class="flex items-center space-x-3 mb-6">
+                    <i data-lucide="brain" class="w-5 h-5 text-slate-600"></i>
+                    <h2 class="text-lg font-medium text-slate-700">Extracted Entities</h2>
+                </div>
+                
+                <div id="resultsContainer">
+                    <div class="text-center text-slate-400 py-12">
+                        <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
+                            <i data-lucide="search" class="w-8 h-8 text-slate-300"></i>
+                        </div>
+                        <p class="text-slate-500 font-light mb-1">No entities extracted yet</p>
+                        <p class="text-sm text-slate-400">Try recording audio or entering text to begin</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transcription Panel -->
+        <div class="glass-effect rounded-2xl p-6 mt-8 shadow-sm fade-in" id="transcriptionPanel" style="display: none;">
+            <div class="flex items-center space-x-3 mb-4">
+                <i data-lucide="message-square" class="w-5 h-5 text-slate-600"></i>
+                <h2 class="text-lg font-medium text-slate-700">Transcription</h2>
+            </div>
+            <div id="transcriptionText" class="bg-gradient-to-br from-slate-50 to-stone-50 p-6 rounded-xl border border-slate-100 italic text-slate-600 font-light leading-relaxed">
+                <!-- Transcription will appear here -->
+            </div>
+        </div>
+
+        <!-- Database Panel -->
+        <div class="glass-effect rounded-2xl p-6 mt-8 shadow-sm fade-in">
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center space-x-3">
+                    <i data-lucide="database" class="w-5 h-5 text-slate-600"></i>
+                    <h2 class="text-lg font-medium text-slate-700">Entity Database</h2>
+                </div>
+                <div class="flex space-x-2">
+                    <button id="refreshEntities" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        <span>Refresh</span>
+                    </button>
+                    <button id="showStats" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                        <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+                        <span>Stats</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Filter Controls -->
+            <div class="flex flex-wrap gap-3 mb-6">
+                <select id="entityTypeFilter" class="border border-slate-200 rounded-lg px-4 py-2 text-sm text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent">
+                    <option value="">All Entity Types</option>
+                    <option value="person">👤 People</option>
+                    <option value="organization">🏢 Organizations</option>
+                    <option value="location">📍 Locations</option>
+                    <option value="event">📅 Events</option>
+                    <option value="product">📦 Products</option>
+                    <option value="financial">💰 Financial</option>
+                    <option value="contact">📞 Contacts</option>
+                    <option value="date">📆 Dates</option>
+                    <option value="time">⏰ Times</option>
+                </select>
+                <input type="number" id="limitInput" placeholder="Limit (50)" 
+                    class="border border-slate-200 rounded-lg px-4 py-2 text-sm text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent w-24" min="1" max="1000" value="50">
+            </div>
+
+            <div id="databaseEntities" class="max-h-96 overflow-y-auto">
+                <!-- Database entities will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast" class="fixed top-6 right-6 z-50 hidden">
+        <div class="glass-effect text-slate-700 px-6 py-4 rounded-xl shadow-lg border border-slate-200 fade-in">
+            <div class="flex items-center space-x-3">
+                <div id="toastIcon" class="w-5 h-5"></div>
+                <div id="toastMessage" class="font-medium">Success message</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Lucide icons
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+        });
+    </script>
+    <script src="app.js"></script>
+</body>
+</html> 

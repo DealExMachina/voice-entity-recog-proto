@@ -1,0 +1,19 @@
+node_modules/
+.env
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+build/
+data/*.db
+data/*.db-*
+.vscode/
+.idea/
+*.swp
+*.swo
+*~ # Environment files - DO NOT COMMIT API KEYS
+.env
+.env.local
+.env.*.local
