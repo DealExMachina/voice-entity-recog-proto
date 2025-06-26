@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mastra Voice Entity Extraction</title>
+    
+    <!-- Production CSS -->
+    <link rel="stylesheet" href="/dist/styles.min.css">
+    
+    <!-- Preload critical resources -->
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"></noscript>
+    
+    <!-- Lucide Icons (optimized) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Meta tags for SEO and performance -->
+    <meta name="description" content="AI-powered voice entity extraction with real-time conversation analysis">
+    <meta name="keywords" content="AI, voice analysis, entity extraction, sales, conversation">
+    <meta name="author" content="Mastra AI">
+    
+    <!-- Performance hints -->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link rel="dns-prefetch" href="//fonts.googleapis.com">
+    <link rel="dns-prefetch" href="//unpkg.com">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2'><path d='M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z'/><path d='M19 10v2a7 7 0 0 1-14 0v-2'/><line x1='12' y1='19' x2='12' y2='23'/><line x1='8' y1='23' x2='16' y2='23'/></svg>">
+</head>
+<body class="bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50 min-h-screen antialiased">
+    <div class="flex min-h-screen">
+        <!-- Main Content Area -->
+        <div class="flex-1 p-8">
+            <!-- Header -->
+            <div class="text-center mb-12 fade-in">
+                <div class="flex items-center justify-center mb-4">
+                    <div class="p-3 rounded-full bg-gradient-to-br from-slate-100 to-gray-100 shadow-sm mr-4">
+                        <i data-lucide="mic" class="w-8 h-8 text-slate-600"></i>
+                    </div>
+                    <h1 class="text-4xl font-light text-slate-800 tracking-tight">
+                        Mastra
+                        <span class="font-medium text-slate-600">Voice Entity Extraction</span>
+                    </h1>
+                </div>
+                <p class="text-slate-500 text-lg font-light max-w-2xl mx-auto text-balance">
+                    Intelligent entity extraction from voice conversations
+                </p>
+            </div>
+
+            <!-- Central Recording Area -->
+            <div class="flex flex-col items-center justify-center mb-12">
+                <!-- AI Provider Selector (above recording button) -->
+                <div class="flex items-center space-x-2 mb-8">
+                    <i data-lucide="cpu" class="w-4 h-4 text-slate-500"></i>
+                    <select id="aiProvider" class="border border-slate-200 rounded-lg px-4 py-2 text-sm text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent">
+                        <option value="demo">Demo Mode</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="mistral">Mistral AI</option>
+                    </select>
+                </div>
+
+                <!-- Main Recording Button -->
+                <button id="recordBtn" class="record-button bg-gradient-to-br from-red-50 to-rose-100 border-2 border-red-200 text-red-700 font-medium hover:from-red-100 hover:to-rose-200 flex items-center justify-center">
+                    <div class="flex flex-col items-center">
+                        <i data-lucide="mic" class="w-8 h-8 mb-2"></i>
+                        <span class="text-sm">Record</span>
+                    </div>
+                </button>
+                <div id="recordingStatus" class="mt-4 text-sm text-slate-500 font-light text-center min-h-[20px]"></div>
+
+                <!-- Alternative Input Methods -->
+                <div class="mt-8 flex space-x-4">
+                    <!-- File Upload -->
+                    <div class="relative">
+                        <input type="file" id="audioUpload" accept="audio/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                        <button class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                            <i data-lucide="upload" class="w-4 h-4"></i>
+                            <span>Upload Audio</span>
+                        </button>
+                    </div>
+                    <!-- Text Input Toggle -->
+                    <button id="textInputToggle" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                        <i data-lucide="type" class="w-4 h-4"></i>
+                        <span>Text Input</span>
+                    </button>
+                </div>
+
+                <!-- Text Input Area (hidden by default) -->
+                <div id="textInputArea" class="mt-6 w-full max-w-2xl hidden">
+                    <div class="glass-effect rounded-xl p-6">
+                        <textarea id="textInput" placeholder="Enter text for entity extraction..." class="w-full h-32 p-4 border border-slate-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent bg-white/50"></textarea>
+                        <div class="flex justify-end mt-4 space-x-2">
+                            <button id="textInputCancel" class="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors">Cancel</button>
+                            <button id="textInputSubmit" class="btn-primary px-6 py-2 text-slate-700 font-medium rounded-lg">Extract Entities</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transcript Section -->
+            <div id="transcriptSection" class="mb-8 hidden">
+                <div class="glass-effect rounded-xl p-6 max-w-4xl mx-auto">
+                    <div class="flex items-center mb-4">
+                        <i data-lucide="file-text" class="w-5 h-5 text-slate-600 mr-2"></i>
+                        <h3 class="text-lg font-medium text-slate-700">Transcript</h3>
+                    </div>
+                    <div id="transcript" class="transcript-box p-4 bg-slate-50 rounded-lg border text-slate-600 leading-relaxed"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Entity Sidebar -->
+        <div class="w-96 bg-white/30 backdrop-blur-md border-l border-white/20 p-6 sidebar">
+            <div class="mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-medium text-slate-800">Extracted Entities</h2>
+                    <div class="flex items-center space-x-2">
+                        <button id="clearEntities" class="p-2 text-slate-400 hover:text-red-500 transition-colors" title="Clear all entities">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                        <button id="downloadEntities" class="p-2 text-slate-400 hover:text-blue-500 transition-colors" title="Download entities">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Entity Type Filter -->
+                <select id="entityTypeFilter" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-slate-200">
+                    <option value="">All Types</option>
+                    <option value="person">👤 Person</option>
+                    <option value="organization">🏢 Organization</option>
+                    <option value="location">📍 Location</option>
+                    <option value="event">📅 Event</option>
+                    <option value="product">📦 Product</option>
+                    <option value="financial">💰 Financial</option>
+                    <option value="contact">📞 Contact</option>
+                    <option value="date">📆 Date</option>
+                    <option value="time">⏰ Time</option>
+                </select>
+            </div>
+
+            <!-- Current Session Entities -->
+            <div class="mb-8">
+                <h3 class="text-sm font-medium text-slate-600 mb-3 flex items-center">
+                    <i data-lucide="zap" class="w-4 h-4 mr-1"></i>
+                    Current Session
+                </h3>
+                <div id="currentEntities" class="space-y-3 entity-sidebar">
+                    <div class="text-sm text-slate-400 italic">No entities extracted yet</div>
+                </div>
+            </div>
+
+            <!-- Database Entities -->
+            <div>
+                <h3 class="text-sm font-medium text-slate-600 mb-3 flex items-center">
+                    <i data-lucide="database" class="w-4 h-4 mr-1"></i>
+                    Database
+                    <span id="dbEntityCount" class="ml-auto text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">0</span>
+                </h3>
+                <div id="databaseEntities" class="space-y-2 entity-sidebar">
+                    <div class="text-sm text-slate-400 italic">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer Status -->
+    <div class="fixed bottom-4 left-4 flex items-center space-x-3 text-xs">
+        <div class="flex items-center space-x-1">
+            <div id="dbStatus" class="w-2 h-2 rounded-full bg-gray-300"></div>
+            <span class="text-slate-500">DB</span>
+        </div>
+        <div class="flex items-center space-x-1">
+            <div id="aiStatus" class="w-2 h-2 rounded-full bg-gray-300"></div>
+            <span class="text-slate-500">AI</span>
+        </div>
+        <div class="flex items-center space-x-1">
+            <div id="mcpStatus" class="w-2 h-2 rounded-full bg-gray-300"></div>
+            <span class="text-slate-500">MCP</span>
+        </div>
+    </div>
+
+    <!-- Production JavaScript -->
+    <script src="/dist/app.min.js"></script>
+    <script>
+        // Initialize Lucide icons after DOM load
+        document.addEventListener('DOMContentLoaded', function() {
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html> 

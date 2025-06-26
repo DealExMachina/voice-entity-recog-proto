@@ -18,8 +18,8 @@ RUN npm ci --include=dev
 # Copy source code
 COPY . .
 
-# Build the application
-RUN npm run build
+# Build the application and production assets
+RUN npm run build:production
 
 # Production stage - use standard Linux instead of Alpine for DuckDB compatibility
 FROM node:22-slim AS production
@@ -38,7 +38,7 @@ COPY package*.json ./
 # Install only production dependencies
 RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy built application from base stage
+# Copy built application and optimized assets from base stage
 COPY --from=base /app/dist ./dist
 COPY --from=base /app/public ./public
 

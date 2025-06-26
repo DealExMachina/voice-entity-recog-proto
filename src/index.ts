@@ -1,5 +1,6 @@
 import express, { Application } from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
@@ -30,9 +31,24 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.set('trust proxy', true); // Trust reverse proxies (needed for Koyeb)
+app.use(compression()); // Enable gzip compression
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, '../public')));
+
+// Serve static assets with caching in production
+if (process.env.NODE_ENV === 'production') {
+  app.use('/dist', express.static(path.join(__dirname, '../public/dist'), {
+    maxAge: '1y', // Cache static assets for 1 year
+    etag: true,
+    lastModified: true
+  }));
+}
+
+// Serve static files but exclude index.html to handle it with custom route
+app.use(express.static(path.join(__dirname, '../public'), {
+  maxAge: process.env.NODE_ENV === 'production' ? '1d' : '0', // Cache HTML for 1 day in production
+  index: false // Disable automatic index.html serving
+}));
 
 // Apply rate limiting
 app.use('/api/health', healthLimiter);
@@ -128,9 +144,20 @@ wss.on('connection', (ws) => {
 // API routes
 app.use('/api', apiRoutes);
 
-// Serve main app
+// Serve main app (production optimized HTML in production)
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
+  const isProduction = process.env.NODE_ENV === 'production';
+  const htmlFile = isProduction ? '../public/index.production.html' : '../public/index.html';
+  const fullPath = path.join(__dirname, htmlFile);
+  
+  // Send the appropriate HTML file based on environment
+  res.sendFile(fullPath, (err) => {
+    if (err && isProduction) {
+      // Fallback to development HTML if production file doesn't exist
+      console.warn('Production HTML not found, falling back to development HTML');
+      res.sendFile(path.join(__dirname, '../public/index.html'));
+    }
+  });
 });
 
 // Global error handler
