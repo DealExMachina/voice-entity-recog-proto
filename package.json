@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "npx tsx src/index.js",
     "start:ts": "npx tsx src/index-ts.ts",
     "dev": "node --watch src/index.js",
     "dev:ts": "npx tsx --watch src/index-ts.ts",

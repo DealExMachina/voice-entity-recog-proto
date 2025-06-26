@@ -1,4 +1,4 @@
-name: voice-entity-app
+name: voice-entity-typescript-app
 
 services:
   - name: api
@@ -29,6 +29,8 @@ services:
         from_secret: MISTRAL_API_KEY
     build:
       buildpack: nodejs
+    start:
+      command: npx tsx src/index.js
     regions:
       - fra
     scale:

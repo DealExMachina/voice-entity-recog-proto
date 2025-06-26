@@ -1,4 +1,11 @@
-import { insertEntity, insertConversation, getAllEntities, getEntitiesByType, getConversationById, initializeDatabase } from '../database/duckdb.js';
+import { 
+  insertEntity, 
+  insertConversation, 
+  getAllEntities, 
+  getEntitiesByType,
+  getConversationById,
+  initializeDatabase 
+} from '../database/duckdb-simple.ts';
 
 export class McpService {
   constructor() {
@@ -10,10 +17,10 @@ export class McpService {
   }
 
   async initialize() {
-    console.log('🔗 MCP Service initializing...');
+    console.log('🔗 MCP Service (TypeScript) initializing...');
     // Initialize the database with DuckDB Neo
     await initializeDatabase();
-    console.log('✅ MCP Service initialized with DuckDB Neo');
+    console.log('✅ MCP Service initialized with DuckDB Neo + TypeScript');
     return true;
   }
 
