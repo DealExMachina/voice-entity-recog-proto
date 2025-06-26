@@ -163,16 +163,48 @@ GET /api/stats
 
 ## 🚀 Deployment
 
-### Quick Deploy to Koyeb (EU Frankfurt)
+### GitHub Actions + Koyeb (Recommended)
+
+**Automated deployment with GitHub Container Registry:**
+
+1. **Setup Repository Secrets** (GitHub repo settings → Secrets):
+   ```
+   KOYEB_TOKEN=your-koyeb-api-token
+   OPENAI_API_KEY=sk-your-openai-key
+   ```
+
+2. **Deploy on Push**:
+   ```bash
+   git add .
+   git commit -m "Deploy to production"
+   git push origin main
+   # GitHub Actions automatically builds Docker image and deploys to Koyeb
+   ```
+
+3. **Manual Deployment**:
+   - Go to GitHub Actions tab in your repository
+   - Run "Build and Deploy to Koyeb" workflow manually
+
+**What the workflow does:**
+- ✅ Builds optimized Docker image
+- ✅ Pushes to GitHub Container Registry (ghcr.io)
+- ✅ Creates/updates Koyeb service with proper configuration
+- ✅ Sets up health checks and auto-scaling
+- ✅ Deploys to EU Frankfurt region
+
+### Alternative: Docker Compose
 
 ```bash
-# Method 1: Dashboard (Recommended)
-# 1. Push code to GitHub
-# 2. Connect repository to Koyeb
-# 3. Add environment variables
-# 4. Deploy automatically
+# Local/VPS deployment with Docker
+cp docker.env.example docker.env
+# Edit docker.env with your settings
+./scripts/deploy-docker.sh
+```
 
-# Method 2: CLI
+### Alternative: Koyeb CLI
+
+```bash
+# Direct CLI deployment
 ./scripts/deploy-koyeb.sh
 ```
 

@@ -1,0 +1,113 @@
+name: Build and Deploy to Koyeb
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix=sha-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+
+    - name: Deploy to Koyeb
+      env:
+        KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        IMAGE_URL: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+      run: |
+        # Install Koyeb CLI
+        curl -fsSL https://app.koyeb.com/download/cli/install.sh | bash
+        
+        # Configure Koyeb CLI
+        echo "$KOYEB_TOKEN" | ~/.koyeb/koyeb auth login --token
+        
+        # Check if service exists
+        SERVICE_EXISTS=$(~/.koyeb/koyeb services list --app sales-buddy --output json | jq -r '.services[] | select(.name == "web") | .id' 2>/dev/null || echo "")
+        
+        if [ -n "$SERVICE_EXISTS" ]; then
+          echo "🔄 Updating existing service..."
+          ~/.koyeb/koyeb services update web \
+            --app sales-buddy \
+            --docker $IMAGE_URL \
+            --env NODE_ENV=production \
+            --env PORT=8000 \
+            --env DB_PATH=/tmp/entities.db \
+            --env AI_PROVIDER=openai \
+            --env OPENAI_API_KEY="$OPENAI_API_KEY" \
+            --env RATE_LIMIT_ENABLED=true \
+            --env RATE_LIMIT_WINDOW_MINUTES=15 \
+            --env RATE_LIMIT_MAX_REQUESTS=100 \
+            --ports 8000:http \
+            --health-checks 8000:http:/api/health \
+            --instance-type nano \
+            --regions fra \
+            --scale 1
+        else
+          echo "🆕 Creating new service..."
+          ~/.koyeb/koyeb services create web \
+            --app sales-buddy \
+            --docker $IMAGE_URL \
+            --env NODE_ENV=production \
+            --env PORT=8000 \
+            --env DB_PATH=/tmp/entities.db \
+            --env AI_PROVIDER=openai \
+            --env OPENAI_API_KEY="$OPENAI_API_KEY" \
+            --env RATE_LIMIT_ENABLED=true \
+            --env RATE_LIMIT_WINDOW_MINUTES=15 \
+            --env RATE_LIMIT_MAX_REQUESTS=100 \
+            --ports 8000:http \
+            --health-checks 8000:http:/api/health \
+            --instance-type nano \
+            --regions fra \
+            --scale 1
+        fi
+        
+        # Wait for deployment
+        echo "⏳ Waiting for deployment to complete..."
+        sleep 30
+        
+        # Check service status
+        ~/.koyeb/koyeb services list --app sales-buddy
+
+    - name: Report deployment status
+      run: |
+        echo "🎉 Deployment completed!"
+        echo "📦 Docker image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+        echo "🌐 Check your service at: https://app.koyeb.com/" 
