@@ -60,8 +60,13 @@ async function testEntityExtraction(): Promise<void> {
 async function testMcpService(): Promise<void> {
   console.log('🧪 Testing MCP Service...');
   
-  // Initialize database first
-  await initializeDatabase();
+  // Use a unique database path for testing to avoid conflicts
+  const originalDbPath = process.env.DB_PATH;
+  process.env.DB_PATH = `/tmp/test-entities-${Date.now()}.db`;
+  
+  try {
+    // Initialize database first
+    await initializeDatabase();
   
   const mcpService = new McpService();
   await mcpService.initialize();
@@ -90,6 +95,14 @@ async function testMcpService(): Promise<void> {
   console.log('Retrieved entities:', entitiesResult);
   
   console.log('✅ MCP service test completed');
+  } finally {
+    // Restore original DB_PATH
+    if (originalDbPath) {
+      process.env.DB_PATH = originalDbPath;
+    } else {
+      delete process.env.DB_PATH;
+    }
+  }
 }
 
 async function testDemoEntityExtraction(): Promise<void> {

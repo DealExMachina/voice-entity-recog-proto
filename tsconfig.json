@@ -19,17 +19,17 @@
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "./",
     "resolveJsonModule": true,
     "types": ["node"]
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "tests/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "tests",
     "examples",
     "demo",
     "docs"
