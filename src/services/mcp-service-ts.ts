@@ -160,7 +160,7 @@ export class McpService {
       console.error(`❌ Tool execution failed for ${toolName}:`, error);
       return {
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   }
@@ -195,7 +195,7 @@ export class McpService {
       console.error('Error storing entity:', error);
       return {
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   }
@@ -244,7 +244,7 @@ export class McpService {
       console.error('Error retrieving entities:', error);
       return {
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   }
@@ -272,7 +272,7 @@ export class McpService {
       console.error('Error storing conversation:', error);
       return {
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   }
@@ -291,7 +291,7 @@ export class McpService {
       console.error('Error retrieving conversation:', error);
       return {
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   }
@@ -318,7 +318,7 @@ export class McpService {
       };
     } catch (error) {
       console.error('Error getting stats:', error);
-      return { error: error.message };
+      return { error: error instanceof Error ? error.message : String(error) };
     }
   }
 
