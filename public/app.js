@@ -149,8 +149,9 @@ class MastraVoiceApp {
 
     async startRecording() {
         try {
-            // Show immediate feedback
+            // Immediate visual feedback
             this.showProcessingState('Requesting microphone access...');
+            this.updateRecordingUI('requesting');
             
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
@@ -164,6 +165,10 @@ class MastraVoiceApp {
                 audioTracks: stream.getAudioTracks().length,
                 settings: stream.getAudioTracks()[0]?.getSettings()
             });
+            
+            // Update UI to show we're setting up recording
+            this.showProcessingState('Setting up recording...');
+            this.updateRecordingUI('preparing');
             
             // Try different MIME types for better compatibility
             let mimeType = 'audio/webm;codecs=opus';
@@ -215,28 +220,102 @@ class MastraVoiceApp {
                 this.hideProcessingState();
             };
             
-            this.mediaRecorder.start(1000); // Collect data every second for better chunking
-            console.log('🎬 Recording started');
+            // Add event listener for when recording actually starts
+            this.mediaRecorder.onstart = () => {
+                console.log('🎬 MediaRecorder started - ready to record!');
+                this.isRecording = true;
+                this.updateRecordingUI('recording');
+                this.startRecordingCountdown();
+            };
             
-            this.isRecording = true;
-            this.showProcessingState('Recording... Click to stop');
+            this.mediaRecorder.start(1000); // Collect data every second for better chunking
+            console.log('🎬 Starting MediaRecorder...');
             
         } catch (error) {
             console.error('Failed to start recording:', error);
             this.showToast(`Recording failed: ${error.message}`, 'error');
             this.hideProcessingState();
+            this.updateRecordingUI('error');
         }
     }
 
-    startRecordingTimer() {
-        this.recordingStartTime = Date.now();
-        this.recordingTimer = setInterval(() => {
-            const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
-            const minutes = Math.floor(elapsed / 60);
-            const seconds = elapsed % 60;
-            document.getElementById('recordingStatus').textContent = 
-                `Recording: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+
+    startRecordingCountdown() {
+        // Play audio notification to indicate recording started
+        this.playRecordingStartSound();
+        
+        // Show immediate "ready to speak" feedback with visual countdown
+        let countdown = 3;
+        this.showProcessingState(`🎤 Recording in ${countdown}... Get ready!`);
+        
+        const countdownTimer = setInterval(() => {
+            countdown--;
+            if (countdown > 0) {
+                this.showProcessingState(`🎤 Recording in ${countdown}... Get ready!`);
+                // Play a subtle tick sound for countdown
+                this.playTickSound();
+            } else {
+                clearInterval(countdownTimer);
+                this.showProcessingState('🔴 Recording NOW - speak clearly!');
+                
+                // Start the recording timer
+                this.recordingStartTime = Date.now();
+                this.recordingTimer = setInterval(() => {
+                    const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
+                    const minutes = Math.floor(elapsed / 60);
+                    const seconds = elapsed % 60;
+                    const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    
+                    // Update both the processing state and recording status
+                    this.showProcessingState(`🔴 Recording: ${timeStr} - Click to stop`);
+                    document.getElementById('recordingStatus').textContent = `Recording: ${timeStr}`;
+                }, 1000);
+            }
         }, 1000);
+    }
+    
+    playRecordingStartSound() {
+        try {
+            // Create a simple audio context for notification sounds
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // High frequency beep for start
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.2);
+        } catch (error) {
+            console.log('Audio notification not available:', error);
+        }
+    }
+    
+    playTickSound() {
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Lower frequency tick for countdown
+            oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.05, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.1);
+        } catch (error) {
+            console.log('Audio notification not available:', error);
+        }
     }
 
     stopRecording() {
@@ -252,33 +331,70 @@ class MastraVoiceApp {
             }
             
             // Update UI
-            this.updateRecordingUI(false);
+            this.updateRecordingUI('idle');
             this.showProcessingState('Processing audio...');
         }
     }
 
-    updateRecordingUI(isRecording) {
+    updateRecordingUI(state) {
         const recordBtn = document.getElementById('recordBtn');
         const recordingStatus = document.getElementById('recordingStatus');
         
-        if (isRecording) {
-            recordBtn.innerHTML = `
-                <div class="flex flex-col items-center">
-                    <i data-lucide="square" class="w-8 h-8 mb-2"></i>
-                    <span class="text-sm">Stop</span>
-                </div>
-            `;
-            recordBtn.className = 'record-button bg-gradient-to-br from-red-200 to-rose-300 border-2 border-red-400 text-red-800 font-medium recording flex items-center justify-center';
-            recordingStatus.textContent = 'Recording in progress...';
-        } else {
-            recordBtn.innerHTML = `
-                <div class="flex flex-col items-center">
-                    <i data-lucide="mic" class="w-8 h-8 mb-2"></i>
-                    <span class="text-sm">Record</span>
-                </div>
-            `;
-            recordBtn.className = 'record-button bg-gradient-to-br from-red-50 to-rose-100 border-2 border-red-200 text-red-700 font-medium hover:from-red-100 hover:to-rose-200 flex items-center justify-center';
-            recordingStatus.textContent = '';
+        switch (state) {
+            case 'requesting':
+                recordBtn.innerHTML = `
+                    <div class="flex flex-col items-center">
+                        <i data-lucide="mic" class="w-8 h-8 mb-2 animate-pulse"></i>
+                        <span class="text-sm">Requesting...</span>
+                    </div>
+                `;
+                recordBtn.className = 'record-button bg-gradient-to-br from-yellow-100 to-amber-200 border-2 border-yellow-300 text-yellow-800 font-medium flex items-center justify-center';
+                recordingStatus.textContent = 'Please allow microphone access';
+                break;
+                
+            case 'preparing':
+                recordBtn.innerHTML = `
+                    <div class="flex flex-col items-center">
+                        <i data-lucide="settings" class="w-8 h-8 mb-2 animate-spin"></i>
+                        <span class="text-sm">Preparing...</span>
+                    </div>
+                `;
+                recordBtn.className = 'record-button bg-gradient-to-br from-blue-100 to-indigo-200 border-2 border-blue-300 text-blue-800 font-medium flex items-center justify-center';
+                recordingStatus.textContent = 'Setting up audio recording...';
+                break;
+                
+            case 'recording':
+                recordBtn.innerHTML = `
+                    <div class="flex flex-col items-center">
+                        <i data-lucide="square" class="w-8 h-8 mb-2"></i>
+                        <span class="text-sm">Stop</span>
+                    </div>
+                `;
+                recordBtn.className = 'record-button bg-gradient-to-br from-red-200 to-rose-300 border-2 border-red-400 text-red-800 font-medium recording flex items-center justify-center';
+                recordingStatus.textContent = '🔴 Recording - speak now!';
+                break;
+                
+            case 'error':
+                recordBtn.innerHTML = `
+                    <div class="flex flex-col items-center">
+                        <i data-lucide="alert-triangle" class="w-8 h-8 mb-2"></i>
+                        <span class="text-sm">Error</span>
+                    </div>
+                `;
+                recordBtn.className = 'record-button bg-gradient-to-br from-red-100 to-red-200 border-2 border-red-300 text-red-800 font-medium flex items-center justify-center';
+                recordingStatus.textContent = 'Recording failed - try again';
+                break;
+                
+            default: // 'idle' or false
+                recordBtn.innerHTML = `
+                    <div class="flex flex-col items-center">
+                        <i data-lucide="mic" class="w-8 h-8 mb-2"></i>
+                        <span class="text-sm">Record</span>
+                    </div>
+                `;
+                recordBtn.className = 'record-button bg-gradient-to-br from-red-50 to-rose-100 border-2 border-red-200 text-red-700 font-medium hover:from-red-100 hover:to-rose-200 flex items-center justify-center';
+                recordingStatus.textContent = '';
+                break;
         }
         
         lucide.createIcons();
