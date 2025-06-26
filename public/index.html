@@ -52,13 +52,31 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
         }
 
-        .status-indicator {
-            animation: breathe 2s ease-in-out infinite;
+        .record-button {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 25px rgba(239, 68, 68, 0.2);
         }
 
-        @keyframes breathe {
-            0%, 100% { opacity: 0.6; }
-            50% { opacity: 1; }
+        .record-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 12px 35px rgba(239, 68, 68, 0.3);
+        }
+
+        .record-button.recording {
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+            animation: pulse 2s infinite;
+        }
+
+        .sidebar {
+            height: calc(100vh - 2rem);
+            overflow-y: auto;
+        }
+
+        .main-content {
+            min-height: calc(100vh - 2rem);
         }
 
         .fade-in {
@@ -78,6 +96,17 @@
         @keyframes fadeInSlideUp {
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
+        }
+
+        .entity-sidebar {
+            max-height: calc(100vh - 12rem);
+            overflow-y: auto;
+        }
+
+        .transcript-box {
+            min-height: 200px;
+            max-height: 300px;
+            overflow-y: auto;
         }
     </style>
     <script>
@@ -113,183 +142,165 @@
     </script>
 </head>
 <body class="bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50 min-h-screen antialiased">
-    <div class="container mx-auto px-4 py-8 max-w-7xl">
-        <!-- Header -->
-        <div class="text-center mb-12 fade-in">
-            <div class="flex items-center justify-center mb-4">
-                <div class="p-3 rounded-full bg-gradient-to-br from-slate-100 to-gray-100 shadow-sm mr-4">
-                    <i data-lucide="mic" class="w-8 h-8 text-slate-600"></i>
+    <div class="flex min-h-screen">
+        <!-- Main Content Area -->
+        <div class="flex-1 p-8">
+            <!-- Header -->
+            <div class="text-center mb-12 fade-in">
+                <div class="flex items-center justify-center mb-4">
+                    <div class="p-3 rounded-full bg-gradient-to-br from-slate-100 to-gray-100 shadow-sm mr-4">
+                        <i data-lucide="mic" class="w-8 h-8 text-slate-600"></i>
+                    </div>
+                    <h1 class="text-4xl font-light text-slate-800 tracking-tight">
+                        Mastra
+                        <span class="font-medium text-slate-600">Voice Entity Extraction</span>
+                    </h1>
                 </div>
-                <h1 class="text-4xl font-light text-slate-800 tracking-tight">
-                    Mastra
-                    <span class="font-medium text-slate-600">Voice Entity Extraction</span>
-                </h1>
+                <p class="text-slate-500 text-lg font-light max-w-2xl mx-auto">
+                    Intelligent entity extraction from voice conversations
+                </p>
             </div>
-            <p class="text-slate-500 text-lg font-light max-w-2xl mx-auto">
-                Intelligent entity extraction from voice conversations with real-time storage via Model Context Protocol
-            </p>
-        </div>
 
-        <!-- Status Panel -->
-        <div class="glass-effect rounded-2xl p-6 mb-8 fade-in shadow-sm">
-            <div class="flex items-center justify-between mb-6">
-                <div class="flex items-center space-x-3">
-                    <div class="status-indicator w-2 h-2 bg-emerald-400 rounded-full"></div>
-                    <h2 class="text-lg font-medium text-slate-700">System Status</h2>
-                </div>
-                <div class="flex items-center space-x-3">
-                    <!-- AI Provider Selector -->
-                    <div class="flex items-center space-x-2">
-                        <i data-lucide="cpu" class="w-4 h-4 text-slate-500"></i>
-                        <select id="aiProvider" class="border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent">
-                            <option value="demo">Demo Mode</option>
-                            <option value="openai">OpenAI</option>
-                            <option value="mistral">Mistral AI</option>
-                        </select>
-                    </div>
-                    <button id="refreshStatus" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
-                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-                        <span>Refresh</span>
-                    </button>
-                </div>
-            </div>
-            <div id="statusDisplay" class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <!-- Status items will be populated here -->
-            </div>
-        </div>
-
-        <!-- Main Interface -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <!-- Voice Input Panel -->
-            <div class="glass-effect rounded-2xl p-6 shadow-sm fade-in">
-                <div class="flex items-center space-x-3 mb-6">
-                    <i data-lucide="mic" class="w-5 h-5 text-slate-600"></i>
-                    <h2 class="text-lg font-medium text-slate-700">Voice Input</h2>
-                </div>
-                
-                <!-- Recording Controls -->
-                <div class="text-center mb-8">
-                    <button id="recordBtn" class="group relative bg-gradient-to-br from-red-50 to-rose-100 border border-red-200 text-red-700 px-10 py-6 rounded-2xl text-lg font-medium hover:from-red-100 hover:to-rose-200 transition-all duration-300 transform hover:scale-105">
-                        <div class="flex items-center justify-center space-x-3">
-                            <div class="relative">
-                                <i data-lucide="mic" class="w-6 h-6"></i>
-                                <div class="absolute inset-0 rounded-full bg-red-400 opacity-0 group-hover:opacity-20 transition-opacity"></div>
-                            </div>
-                            <span>Start Recording</span>
-                        </div>
-                    </button>
-                    <div id="recordingStatus" class="mt-3 text-sm text-slate-500 font-light"></div>
+            <!-- Central Recording Area -->
+            <div class="flex flex-col items-center justify-center mb-12">
+                <!-- AI Provider Selector (above recording button) -->
+                <div class="flex items-center space-x-2 mb-8">
+                    <i data-lucide="cpu" class="w-4 h-4 text-slate-500"></i>
+                    <select id="aiProvider" class="border border-slate-200 rounded-lg px-4 py-2 text-sm text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent">
+                        <option value="demo">Demo Mode</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="mistral">Mistral AI</option>
+                    </select>
                 </div>
 
-                <!-- Divider -->
-                <div class="relative my-8">
-                    <div class="absolute inset-0 flex items-center">
-                        <div class="w-full border-t border-slate-200"></div>
+                <!-- Main Recording Button -->
+                <button id="recordBtn" class="record-button bg-gradient-to-br from-red-50 to-rose-100 border-2 border-red-200 text-red-700 font-medium hover:from-red-100 hover:to-rose-200 flex items-center justify-center">
+                    <div class="flex flex-col items-center">
+                        <i data-lucide="mic" class="w-8 h-8 mb-2"></i>
+                        <span class="text-sm">Record</span>
                     </div>
-                    <div class="relative flex justify-center text-sm">
-                        <span class="px-3 bg-white text-slate-400 font-light">or</span>
-                    </div>
-                </div>
+                </button>
+                <div id="recordingStatus" class="mt-4 text-sm text-slate-500 font-light text-center min-h-[20px]"></div>
 
-                <!-- File Upload Alternative -->
-                <div class="space-y-4">
-                    <div class="flex items-center space-x-2 text-slate-600">
-                        <i data-lucide="upload" class="w-4 h-4"></i>
-                        <h3 class="text-sm font-medium">Upload Audio File</h3>
+                <!-- Alternative Input Methods -->
+                <div class="mt-8 flex space-x-4">
+                    <!-- File Upload -->
+                    <div class="relative">
+                        <input type="file" id="audioUpload" accept="audio/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                        <button class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                            <i data-lucide="upload" class="w-4 h-4"></i>
+                            <span>Upload Audio</span>
+                        </button>
                     </div>
-                    <div class="border-2 border-dashed border-slate-200 rounded-xl p-6 hover:border-slate-300 transition-colors">
-                        <input type="file" id="audioUpload" accept="audio/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-slate-50 file:text-slate-600 hover:file:bg-slate-100">
-                    </div>
-                    <button id="uploadBtn" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium w-full flex items-center justify-center space-x-2">
-                        <i data-lucide="play" class="w-4 h-4"></i>
-                        <span>Process Audio</span>
-                    </button>
-                </div>
-
-                <!-- Text Input Alternative -->
-                <div class="space-y-4 mt-8">
-                    <div class="flex items-center space-x-2 text-slate-600">
+                    <!-- Text Input Toggle -->
+                    <button id="textInputToggle" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
                         <i data-lucide="type" class="w-4 h-4"></i>
-                        <h3 class="text-sm font-medium">Text Input</h3>
-                    </div>
+                        <span>Text Input</span>
+                    </button>
+                </div>
+
+                <!-- Text Input Area (hidden by default) -->
+                <div id="textInputArea" class="mt-6 w-full max-w-2xl" style="display: none;">
                     <textarea id="textInput" placeholder="Enter text for entity extraction..." 
                         class="w-full p-4 border border-slate-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent bg-white/50 backdrop-blur-sm text-slate-700 placeholder-slate-400" rows="3"></textarea>
-                    <button id="processTextBtn" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium w-full flex items-center justify-center space-x-2">
-                        <i data-lucide="zap" class="w-4 h-4"></i>
-                        <span>Extract Entities</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Results Panel -->
-            <div class="glass-effect rounded-2xl p-6 shadow-sm fade-in">
-                <div class="flex items-center space-x-3 mb-6">
-                    <i data-lucide="brain" class="w-5 h-5 text-slate-600"></i>
-                    <h2 class="text-lg font-medium text-slate-700">Extracted Entities</h2>
-                </div>
-                
-                <div id="resultsContainer">
-                    <div class="text-center text-slate-400 py-12">
-                        <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
-                            <i data-lucide="search" class="w-8 h-8 text-slate-300"></i>
-                        </div>
-                        <p class="text-slate-500 font-light mb-1">No entities extracted yet</p>
-                        <p class="text-sm text-slate-400">Try recording audio or entering text to begin</p>
+                    <div class="flex justify-center mt-4">
+                        <button id="processBtn" class="btn-primary text-slate-600 px-6 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                            <i data-lucide="zap" class="w-4 h-4"></i>
+                            <span>Extract Entities</span>
+                        </button>
                     </div>
                 </div>
             </div>
+
+            <!-- Transcription Box -->
+            <div id="transcriptionPanel" class="glass-effect rounded-2xl p-6 shadow-sm fade-in mb-8" style="display: none;">
+                <div class="flex items-center space-x-3 mb-4">
+                    <i data-lucide="message-square" class="w-5 h-5 text-slate-600"></i>
+                    <h2 class="text-lg font-medium text-slate-700">Transcription</h2>
+                </div>
+                <div id="transcriptionText" class="transcript-box bg-gradient-to-br from-slate-50 to-stone-50 p-6 rounded-xl border border-slate-100 italic text-slate-600 font-light leading-relaxed">
+                    <!-- Transcription will appear here -->
+                </div>
+            </div>
         </div>
 
-        <!-- Transcription Panel -->
-        <div class="glass-effect rounded-2xl p-6 mt-8 shadow-sm fade-in" id="transcriptionPanel" style="display: none;">
-            <div class="flex items-center space-x-3 mb-4">
-                <i data-lucide="message-square" class="w-5 h-5 text-slate-600"></i>
-                <h2 class="text-lg font-medium text-slate-700">Transcription</h2>
-            </div>
-            <div id="transcriptionText" class="bg-gradient-to-br from-slate-50 to-stone-50 p-6 rounded-xl border border-slate-100 italic text-slate-600 font-light leading-relaxed">
-                <!-- Transcription will appear here -->
-            </div>
-        </div>
-
-        <!-- Database Panel -->
-        <div class="glass-effect rounded-2xl p-6 mt-8 shadow-sm fade-in">
+        <!-- Right Sidebar - Entity List -->
+        <div class="w-96 bg-white/50 backdrop-blur-sm border-l border-slate-200 p-6 sidebar">
             <div class="flex items-center justify-between mb-6">
                 <div class="flex items-center space-x-3">
-                    <i data-lucide="database" class="w-5 h-5 text-slate-600"></i>
-                    <h2 class="text-lg font-medium text-slate-700">Entity Database</h2>
+                    <i data-lucide="brain" class="w-5 h-5 text-slate-600"></i>
+                    <h2 class="text-lg font-medium text-slate-700">Entities</h2>
                 </div>
-                <div class="flex space-x-2">
-                    <button id="refreshEntities" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
-                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-                        <span>Refresh</span>
-                    </button>
-                    <button id="showStats" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
-                        <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
-                        <span>Stats</span>
-                    </button>
-                </div>
-            </div>
-            
-            <!-- Filter Controls -->
-            <div class="flex flex-wrap gap-3 mb-6">
-                <select id="entityTypeFilter" class="border border-slate-200 rounded-lg px-4 py-2 text-sm text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent">
-                    <option value="">All Entity Types</option>
-                    <option value="person">👤 People</option>
-                    <option value="organization">🏢 Organizations</option>
-                    <option value="location">📍 Locations</option>
-                    <option value="event">📅 Events</option>
-                    <option value="product">📦 Products</option>
-                    <option value="financial">💰 Financial</option>
-                    <option value="contact">📞 Contacts</option>
-                    <option value="date">📆 Dates</option>
-                    <option value="time">⏰ Times</option>
-                </select>
-                <input type="number" id="limitInput" placeholder="Limit (50)" 
-                    class="border border-slate-200 rounded-lg px-4 py-2 text-sm text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent w-24" min="1" max="1000" value="50">
+                <button id="refreshEntities" class="btn-primary text-slate-600 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1">
+                    <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                    <span>Refresh</span>
+                </button>
             </div>
 
-            <div id="databaseEntities" class="max-h-96 overflow-y-auto">
-                <!-- Database entities will be loaded here -->
+            <!-- Entity Type Filter -->
+            <select id="entityTypeFilter" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent mb-4">
+                <option value="">All Entity Types</option>
+                <option value="person">👤 People</option>
+                <option value="organization">🏢 Organizations</option>
+                <option value="location">📍 Locations</option>
+                <option value="event">📅 Events</option>
+                <option value="product">📦 Products</option>
+                <option value="financial">💰 Financial</option>
+                <option value="contact">📞 Contacts</option>
+                <option value="date">📆 Dates</option>
+                <option value="time">⏰ Times</option>
+            </select>
+
+            <!-- Current Session Entities -->
+            <div class="mb-6">
+                <h3 class="text-sm font-medium text-slate-600 mb-3">Current Session</h3>
+                <div id="resultsContainer" class="space-y-2">
+                    <div class="text-center text-slate-400 py-8">
+                        <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-slate-100 flex items-center justify-center">
+                            <i data-lucide="search" class="w-6 h-6 text-slate-300"></i>
+                        </div>
+                        <p class="text-slate-500 font-light text-sm">No entities yet</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Database Entities -->
+            <div>
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-medium text-slate-600">Database</h3>
+                    <input type="number" id="limitInput" placeholder="50" 
+                        class="border border-slate-200 rounded px-2 py-1 text-xs text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-1 focus:ring-slate-200 w-16" min="1" max="1000" value="50">
+                </div>
+                <div id="databaseEntities" class="entity-sidebar space-y-2">
+                    <!-- Database entities will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Technical Indicators Footer -->
+    <div class="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-sm border-t border-slate-200 p-4">
+        <div class="max-w-7xl mx-auto">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2 h-2 bg-emerald-400 rounded-full"></div>
+                        <span class="text-xs text-slate-600">System Online</span>
+                    </div>
+                    <div id="statusIndicators" class="flex items-center space-x-4">
+                        <!-- Status indicators will be populated here -->
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button id="statsBtn" class="text-slate-500 hover:text-slate-700 text-xs flex items-center space-x-1">
+                        <i data-lucide="bar-chart-3" class="w-3 h-3"></i>
+                        <span>Stats</span>
+                    </button>
+                    <button id="refreshStatus" class="text-slate-500 hover:text-slate-700 text-xs flex items-center space-x-1">
+                        <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                        <span>Refresh</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>

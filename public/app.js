@@ -1,41 +1,109 @@
 class MastraVoiceApp {
     constructor() {
         this.isRecording = false;
-        this.mediaRecorder = null;
-        this.audioChunks = [];
-        this.ws = null;
-        this.currentAiProvider = 'demo';
         this.isProcessing = false;
+        this.audioChunks = [];
+        this.mediaRecorder = null;
+        this.currentAiProvider = 'openai'; // Set default fallback value
+        this.ws = null;
         
-        this.initializeEventListeners();
-        this.connectWebSocket();
-        this.loadSystemStatus();
-        this.loadDatabaseEntities();
-        this.loadAiProviders();
-        this.loadAiStatus();
+        // Initialize app asynchronously without blocking
+        this.initializeApp().catch(error => {
+            console.error('Failed to initialize app:', error);
+            // Continue with basic functionality even if init fails
+            this.setupEventListeners();
+        });
     }
 
-    initializeEventListeners() {
-        // Recording controls
-        document.getElementById('recordBtn').addEventListener('click', () => this.toggleRecording());
+    async initializeApp() {
+        try {
+            console.log('🚀 Initializing MastraVoiceApp...');
+            
+            // Set up event listeners first (non-blocking)
+            this.setupEventListeners();
+            
+            // Load AI status and providers (with timeout)
+            const initPromises = [
+                this.loadAiStatus(),
+                this.loadAiProviders(),
+                this.loadSystemStatus(),
+                this.loadDatabaseEntities()
+            ];
+            
+            // Wait for all with a 5-second timeout
+            await Promise.race([
+                Promise.all(initPromises),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Initialization timeout')), 5000)
+                )
+            ]);
+            
+            console.log('✅ App initialized successfully with AI provider:', this.currentAiProvider);
+        } catch (error) {
+            console.warn('⚠️ App initialization had issues:', error.message);
+            // Ensure we have a fallback provider
+            this.currentAiProvider = this.currentAiProvider || 'openai';
+            console.log('🔄 Using fallback AI provider:', this.currentAiProvider);
+        }
+    }
+
+    setupEventListeners() {
+        // Record button
+        document.getElementById('recordBtn').addEventListener('click', () => {
+            if (this.isRecording) {
+                this.stopRecording();
+            } else {
+                this.startRecording();
+            }
+        });
+
+        // Process text button
+        document.getElementById('processBtn').addEventListener('click', () => {
+            this.processText();
+        });
+
+        // AI Provider selector
+        document.getElementById('aiProvider').addEventListener('change', (e) => {
+            this.switchAiProvider(e);
+        });
+
+        // Entity filter controls
+        document.getElementById('entityTypeFilter').addEventListener('change', () => {
+            this.loadDatabaseEntities();
+        });
+
+        document.getElementById('limitInput').addEventListener('change', () => {
+            this.loadDatabaseEntities();
+        });
+
+        // Statistics button
+        document.getElementById('statsBtn').addEventListener('click', () => {
+            this.showStatistics();
+        });
+
+        // Text input toggle
+        document.getElementById('textInputToggle').addEventListener('click', () => {
+            this.toggleTextInput();
+        });
+
+        // Audio upload (file input)
+        document.getElementById('audioUpload').addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) {
+                this.handleAudioFile(e.target.files[0]);
+            }
+        });
+
+        // Refresh buttons
+        document.getElementById('refreshEntities').addEventListener('click', () => {
+            this.loadDatabaseEntities();
+        });
+
+        document.getElementById('refreshStatus').addEventListener('click', () => {
+            this.loadSystemStatus();
+        });
         
-        // File upload
-        document.getElementById('uploadBtn').addEventListener('click', () => this.processAudioFile());
-        
-        // Text processing
-        document.getElementById('processTextBtn').addEventListener('click', () => this.processText());
-        
-        // Status and database controls
-        document.getElementById('refreshStatus').addEventListener('click', () => this.loadSystemStatus());
-        document.getElementById('refreshEntities').addEventListener('click', () => this.loadDatabaseEntities());
-        document.getElementById('showStats').addEventListener('click', () => this.showStatistics());
-        
-        // Entity filtering
-        document.getElementById('entityTypeFilter').addEventListener('change', () => this.loadDatabaseEntities());
-        document.getElementById('limitInput').addEventListener('change', () => this.loadDatabaseEntities());
-        
-        // AI Provider selection
-        document.getElementById('aiProvider').addEventListener('change', (e) => this.switchAiProvider(e));
+        // Connect WebSocket after DOM is ready
+        this.connectWebSocket();
     }
 
     connectWebSocket() {
@@ -92,35 +160,71 @@ class MastraVoiceApp {
                 } 
             });
             
-            this.mediaRecorder = new MediaRecorder(stream, {
-                mimeType: 'audio/webm;codecs=opus'
+            console.log('🎤 Media stream obtained:', {
+                audioTracks: stream.getAudioTracks().length,
+                settings: stream.getAudioTracks()[0]?.getSettings()
             });
+            
+            // Try different MIME types for better compatibility
+            let mimeType = 'audio/webm;codecs=opus';
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+                console.warn('WebM/Opus not supported, trying WebM/VP8...');
+                mimeType = 'audio/webm';
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    console.warn('WebM not supported, trying MP4...');
+                    mimeType = 'audio/mp4';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        console.warn('MP4 not supported, using default...');
+                        mimeType = '';
+                    }
+                }
+            }
+            
+            console.log('🎵 Using MIME type:', mimeType || 'default');
+            
+            this.mediaRecorder = new MediaRecorder(stream, { 
+                mimeType: mimeType || undefined
+            });
+            
+            console.log('📹 MediaRecorder created:', {
+                mimeType: this.mediaRecorder.mimeType,
+                state: this.mediaRecorder.state
+            });
+            
             this.audioChunks = [];
             
             this.mediaRecorder.ondataavailable = (event) => {
+                console.log('📊 Data chunk received:', {
+                    size: event.data.size,
+                    type: event.data.type
+                });
                 if (event.data.size > 0) {
                     this.audioChunks.push(event.data);
                 }
             };
             
             this.mediaRecorder.onstop = () => {
+                console.log('🛑 Recording stopped, processing...');
                 this.processRecording();
+                stream.getTracks().forEach(track => track.stop());
             };
             
-            this.mediaRecorder.start(100); // Collect data every 100ms for better responsiveness
+            this.mediaRecorder.onerror = (event) => {
+                console.error('🚨 MediaRecorder error:', event);
+                this.showToast('Recording error occurred', 'error');
+                this.hideProcessingState();
+            };
+            
+            this.mediaRecorder.start(1000); // Collect data every second for better chunking
+            console.log('🎬 Recording started');
+            
             this.isRecording = true;
-            
-            // Update UI with recording state
-            this.updateRecordingUI(true);
-            this.hideProcessingState();
-            
-            // Show recording timer
-            this.startRecordingTimer();
+            this.showProcessingState('Recording... Click to stop');
             
         } catch (error) {
-            console.error('Error starting recording:', error);
+            console.error('Failed to start recording:', error);
+            this.showToast(`Recording failed: ${error.message}`, 'error');
             this.hideProcessingState();
-            this.showToast('Failed to start recording. Please check microphone permissions.', 'error');
         }
     }
 
@@ -155,29 +259,26 @@ class MastraVoiceApp {
 
     updateRecordingUI(isRecording) {
         const recordBtn = document.getElementById('recordBtn');
+        const recordingStatus = document.getElementById('recordingStatus');
         
         if (isRecording) {
             recordBtn.innerHTML = `
-                <div class="flex items-center justify-center space-x-3">
-                    <div class="relative">
-                        <i data-lucide="square" class="w-6 h-6"></i>
-                        <div class="absolute inset-0 rounded-full bg-red-400 opacity-20 animate-pulse"></div>
-                    </div>
-                    <span>Stop Recording</span>
+                <div class="flex flex-col items-center">
+                    <i data-lucide="square" class="w-8 h-8 mb-2"></i>
+                    <span class="text-sm">Stop</span>
                 </div>
             `;
-            recordBtn.className = 'group relative bg-gradient-to-br from-red-100 to-rose-200 border border-red-300 text-red-700 px-10 py-6 rounded-2xl text-lg font-medium hover:from-red-200 hover:to-rose-300 transition-all duration-300 animate-pulse';
+            recordBtn.className = 'record-button bg-gradient-to-br from-red-200 to-rose-300 border-2 border-red-400 text-red-800 font-medium recording flex items-center justify-center';
+            recordingStatus.textContent = 'Recording in progress...';
         } else {
             recordBtn.innerHTML = `
-                <div class="flex items-center justify-center space-x-3">
-                    <div class="relative">
-                        <i data-lucide="mic" class="w-6 h-6"></i>
-                        <div class="absolute inset-0 rounded-full bg-red-400 opacity-0 group-hover:opacity-20 transition-opacity"></div>
-                    </div>
-                    <span>Start Recording</span>
+                <div class="flex flex-col items-center">
+                    <i data-lucide="mic" class="w-8 h-8 mb-2"></i>
+                    <span class="text-sm">Record</span>
                 </div>
             `;
-            recordBtn.className = 'group relative bg-gradient-to-br from-red-50 to-rose-100 border border-red-200 text-red-700 px-10 py-6 rounded-2xl text-lg font-medium hover:from-red-100 hover:to-rose-200 transition-all duration-300 transform hover:scale-105';
+            recordBtn.className = 'record-button bg-gradient-to-br from-red-50 to-rose-100 border-2 border-red-200 text-red-700 font-medium hover:from-red-100 hover:to-rose-200 flex items-center justify-center';
+            recordingStatus.textContent = '';
         }
         
         lucide.createIcons();
@@ -185,14 +286,55 @@ class MastraVoiceApp {
 
     async processRecording() {
         try {
-            const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm;codecs=opus' });
+            console.log('🎬 Processing recording with', this.audioChunks.length, 'chunks');
             
-            // Convert to WAV for better compatibility
-            const wavBlob = await this.convertToWav(audioBlob);
-            await this.uploadAudio(wavBlob, 'recording.wav');
+            if (this.audioChunks.length === 0) {
+                throw new Error('No audio data recorded - please try recording again');
+            }
+            
+            // Calculate total size to ensure we have actual data
+            const totalSize = this.audioChunks.reduce((sum, chunk) => sum + chunk.size, 0);
+            console.log('💾 Total audio data size:', totalSize, 'bytes');
+            
+            if (totalSize < 1000) { // Less than 1KB suggests no real audio was captured
+                throw new Error('Audio recording too short or empty - please speak longer');
+            }
+            
+            // Determine the actual MIME type from the first chunk
+            const firstChunk = this.audioChunks[0];
+            const actualMimeType = firstChunk.type || this.mediaRecorder?.mimeType || 'audio/webm';
+            console.log('🎵 Actual audio MIME type:', actualMimeType);
+            
+            const audioBlob = new Blob(this.audioChunks, { type: actualMimeType });
+            console.log('💾 Created audio blob:', {
+                size: audioBlob.size,
+                type: audioBlob.type,
+                expectedSize: totalSize
+            });
+            
+            // Validate blob was created properly
+            if (audioBlob.size === 0) {
+                throw new Error('Failed to create audio blob - please try recording again');
+            }
+            
+            // Determine appropriate filename based on MIME type
+            let filename = 'recording.webm'; // default
+            if (actualMimeType.includes('mp4')) {
+                filename = 'recording.mp4';
+            } else if (actualMimeType.includes('wav')) {
+                filename = 'recording.wav';
+            } else if (actualMimeType.includes('ogg')) {
+                filename = 'recording.ogg';
+            }
+            
+            console.log('📁 Using filename:', filename);
+            
+            // Upload the audio
+            await this.uploadAudio(audioBlob, filename);
+            
         } catch (error) {
-            console.error('Error processing recording:', error);
-            this.showToast('Failed to process recording', 'error');
+            console.error('🚨 Processing error:', error);
+            this.showToast(`Processing failed: ${error.message}`, 'error');
             this.hideProcessingState();
         }
     }
@@ -219,7 +361,19 @@ class MastraVoiceApp {
     async uploadAudio(audioBlob, filename) {
         try {
             this.isProcessing = true;
-            this.showProcessingState(`Processing with ${this.currentAiProvider.toUpperCase()}...`);
+            
+            // Ensure we have a valid AI provider
+            const provider = this.currentAiProvider || 'openai';
+            const providerName = provider.toUpperCase();
+            
+            this.showProcessingState(`Processing with ${providerName}...`);
+            
+            console.log('📤 Uploading audio:', {
+                filename: filename,
+                size: audioBlob.size,
+                type: audioBlob.type,
+                provider: provider
+            });
             
             const formData = new FormData();
             formData.append('audio', audioBlob, filename);
@@ -229,20 +383,22 @@ class MastraVoiceApp {
                 body: formData
             });
             
+            console.log('📥 Server response status:', response.status);
             const result = await response.json();
+            console.log('📋 Server response:', result);
             
             if (result.success) {
-                this.displayTranscription(result.transcription);
-                this.displayEntities(result.entities);
-                this.displayAnalysis(result.analysis);
+                this.displayTranscription(result.data.transcription);
+                this.displayEntities(result.data.entities);
+                this.displayAnalysis(result.data.analysis);
                 this.loadDatabaseEntities(); // Refresh database view
                 
                 // Show success with provider info
-                const providerInfo = this.currentAiProvider === 'demo' ? 'Demo Mode' : 
-                                   this.currentAiProvider === 'openai' ? 'OpenAI' : 'Mistral AI';
+                const providerInfo = provider === 'demo' ? 'Demo Mode' : 
+                                   provider === 'openai' ? 'OpenAI' : 'Mistral AI';
                 this.showToast(`✓ Audio processed successfully with ${providerInfo}!`);
             } else {
-                throw new Error(result.message || 'Processing failed');
+                throw new Error(result.message || result.error || 'Processing failed');
             }
             
         } catch (error) {
@@ -265,7 +421,12 @@ class MastraVoiceApp {
         
         try {
             this.isProcessing = true;
-            this.showProcessingState(`Extracting entities with ${this.currentAiProvider.toUpperCase()}...`);
+            
+            // Ensure we have a valid AI provider
+            const provider = this.currentAiProvider || 'openai';
+            const providerName = provider.toUpperCase();
+            
+            this.showProcessingState(`Extracting entities with ${providerName}...`);
             
             const response = await fetch('/api/extract-entities', {
                 method: 'POST',
@@ -282,8 +443,8 @@ class MastraVoiceApp {
                 this.displayAnalysis(result.analysis);
                 
                 // Show success with provider info
-                const providerInfo = this.currentAiProvider === 'demo' ? 'Demo Mode' : 
-                                   this.currentAiProvider === 'openai' ? 'OpenAI' : 'Mistral AI';
+                const providerInfo = provider === 'demo' ? 'Demo Mode' : 
+                                   provider === 'openai' ? 'OpenAI' : 'Mistral AI';
                 this.showToast(`✓ Entities extracted with ${providerInfo}!`);
             } else {
                 throw new Error(result.message || 'Extraction failed');
@@ -327,54 +488,40 @@ class MastraVoiceApp {
         
         if (!entities || entities.length === 0) {
             container.innerHTML = `
-                <div class="text-center text-slate-400 py-12">
-                    <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
-                        <i data-lucide="search" class="w-8 h-8 text-slate-300"></i>
+                <div class="text-center text-slate-400 py-8">
+                    <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-slate-100 flex items-center justify-center">
+                        <i data-lucide="search" class="w-6 h-6 text-slate-300"></i>
                     </div>
-                    <p class="text-slate-500 font-light mb-1">No entities found</p>
-                    <p class="text-sm text-slate-400">Try a different input</p>
+                    <p class="text-slate-500 font-light text-sm">No entities yet</p>
                 </div>
             `;
             lucide.createIcons();
             return;
         }
         
-        // Add provider indicator
-        const providerBadge = this.getProviderBadge(entities[0]?.provider || this.currentAiProvider);
-        
         const entitiesHtml = entities.map((entity, index) => `
-            <div class="entity-card bg-gradient-to-br from-white/80 to-slate-50/80 border border-slate-200/50 rounded-xl p-4 mb-3 hover:shadow-md transition-all duration-200 animate-fade-in" style="animation-delay: ${index * 0.1}s">
-                <div class="flex justify-between items-start">
-                    <div class="flex-1">
-                        <div class="flex items-center space-x-2 mb-2">
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-${this.getEntityColor(entity.type)}-100 text-${this.getEntityColor(entity.type)}-700 border border-${this.getEntityColor(entity.type)}-200">
-                                ${this.getEntityIcon(entity.type)} ${entity.type}
-                            </span>
-                            <div class="flex items-center space-x-1 text-xs text-slate-400">
-                                <i data-lucide="zap" class="w-3 h-3"></i>
-                                <span>${Math.round(entity.confidence * 100)}%</span>
-                            </div>
-                            ${entity.provider ? `<span class="text-xs px-2 py-0.5 rounded bg-${this.getProviderColor(entity.provider)}-100 text-${this.getProviderColor(entity.provider)}-600">${entity.provider.toUpperCase()}</span>` : ''}
-                        </div>
-                        <div class="font-medium text-slate-800 mb-1">${entity.value}</div>
-                        ${entity.context ? `<div class="text-sm text-slate-500 font-light italic leading-relaxed">"${entity.context}"</div>` : ''}
+            <div class="entity-card bg-white/70 rounded-lg p-3 border border-slate-200/50 hover:bg-white/90 transition-colors animate-fade-in" style="animation-delay: ${index * 0.1}s">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-${this.getEntityColor(entity.type)}-100 text-${this.getEntityColor(entity.type)}-700">
+                        ${this.getEntityIcon(entity.type)} ${entity.type}
+                    </span>
+                    <div class="text-xs text-slate-500">
+                        ${Math.round(entity.confidence * 100)}%
                     </div>
+                </div>
+                
+                <div class="font-medium text-slate-700 text-sm mb-1">${entity.value}</div>
+                ${entity.context ? `<div class="text-xs text-slate-500 italic line-clamp-2 mb-2">"${entity.context}"</div>` : ''}
+                
+                <div class="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-100">
+                    <span>Just now</span>
+                    <i data-lucide="check-circle" class="w-3 h-3 text-emerald-400"></i>
                 </div>
             </div>
         `).join('');
         
-        container.innerHTML = `
-            <div class="mb-4 flex items-center justify-between">
-                <h3 class="font-medium text-slate-700">Extracted Entities (${entities.length})</h3>
-                ${providerBadge}
-            </div>
-            ${entitiesHtml}
-        `;
-        
+        container.innerHTML = entitiesHtml;
         lucide.createIcons();
-        
-        // Smooth scroll to results
-        container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     getProviderBadge(provider) {
@@ -442,21 +589,41 @@ class MastraVoiceApp {
             const response = await fetch('/api/health');
             const data = await response.json();
             
-            const statusHtml = Object.entries(data.services).map(([service, status]) => `
-                <div class="text-center p-4 rounded-xl bg-white/50 backdrop-blur-sm border border-slate-200/50">
-                    <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-${this.getStatusColor(status)}-100 flex items-center justify-center">
-                        <i data-lucide="${this.getStatusIcon(status)}" class="w-6 h-6 text-${this.getStatusColor(status)}-600"></i>
-                    </div>
-                    <div class="font-medium text-slate-700 capitalize text-sm">${service}</div>
-                    <div class="text-xs text-slate-500 capitalize mt-1">${status}</div>
-                </div>
-            `).join('');
+            const indicators = document.getElementById('statusIndicators');
+            if (!indicators) return;
+
+            const statusItems = [];
             
-            document.getElementById('statusDisplay').innerHTML = statusHtml;
-            lucide.createIcons();
+            // Process each service status (data.services is an array)
+            data.services.forEach(service => {
+                const color = this.getStatusColor(service.status);
+                const icon = service.name === 'database' ? 'DB' : 
+                            service.name === 'ai' ? 'AI' : 
+                            service.name === 'mcp' ? 'MCP' : 
+                            service.name === 'mastra' ? 'AI' : service.name.toUpperCase();
+                
+                statusItems.push(`
+                    <div class="flex items-center space-x-1">
+                        <div class="w-2 h-2 bg-${color}-400 rounded-full"></div>
+                        <span class="text-xs text-slate-600">${icon}</span>
+                    </div>
+                `);
+            });
+
+            indicators.innerHTML = statusItems.join('');
             
         } catch (error) {
             console.error('Failed to load status:', error);
+            // Show error status
+            const indicators = document.getElementById('statusIndicators');
+            if (indicators) {
+                indicators.innerHTML = `
+                    <div class="flex items-center space-x-1">
+                        <div class="w-2 h-2 bg-red-400 rounded-full"></div>
+                        <span class="text-xs text-slate-600">System Error</span>
+                    </div>
+                `;
+            }
         }
     }
 
@@ -498,20 +665,17 @@ class MastraVoiceApp {
         }
         
         const entitiesHtml = entities.map(entity => `
-            <div class="flex items-center justify-between p-4 border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                <div class="flex items-center space-x-3 flex-1">
-                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-${this.getEntityColor(entity.type)}-100 text-${this.getEntityColor(entity.type)}-700 border border-${this.getEntityColor(entity.type)}-200">
+            <div class="bg-white/50 rounded-lg p-3 border border-slate-200/50 hover:bg-white/70 transition-colors">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-${this.getEntityColor(entity.type)}-100 text-${this.getEntityColor(entity.type)}-700">
                         ${this.getEntityIcon(entity.type)} ${entity.type}
                     </span>
-                    <span class="font-medium text-slate-700 truncate">${entity.value}</span>
-                </div>
-                <div class="text-right text-xs text-slate-500 flex-shrink-0 ml-3">
-                    <div class="flex items-center space-x-1 mb-1">
-                        <i data-lucide="zap" class="w-3 h-3"></i>
-                        <span>${Math.round(entity.confidence * 100)}%</span>
+                    <div class="text-xs text-slate-500">
+                        ${Math.round(entity.confidence * 100)}%
                     </div>
-                    <div>${new Date(entity.created_at).toLocaleDateString()}</div>
                 </div>
+                <div class="font-medium text-slate-700 text-sm mb-1 truncate">${entity.value}</div>
+                <div class="text-xs text-slate-500">${new Date(entity.created_at).toLocaleDateString()}</div>
             </div>
         `).join('');
         
@@ -608,7 +772,9 @@ class MastraVoiceApp {
             connected: 'emerald',
             active: 'blue',
             ready: 'emerald',
-            error: 'red'
+            up: 'emerald',
+            error: 'red',
+            down: 'red'
         };
         return colors[status] || 'slate';
     }
@@ -638,36 +804,82 @@ class MastraVoiceApp {
     // AI Provider Management
     async loadAiProviders() {
         try {
-            const response = await fetch('/api/ai/providers');
+            console.log('📡 Loading AI providers...');
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('AI providers timeout')), 3000)
+            );
+            
+            const response = await Promise.race([
+                fetch('/api/ai/providers'),
+                timeoutPromise
+            ]);
+            
             const data = await response.json();
             
-            if (data.success) {
+            if (data.success && data.providers) {
                 const select = document.getElementById('aiProvider');
-                select.innerHTML = '';
-                
-                data.providers.forEach(provider => {
-                    const option = document.createElement('option');
-                    option.value = provider.name;
-                    option.textContent = provider.displayName;
-                    select.appendChild(option);
-                });
+                if (select) {
+                    select.innerHTML = '';
+                    
+                    data.providers.forEach(provider => {
+                        const option = document.createElement('option');
+                        option.value = provider.name;
+                        option.textContent = provider.displayName;
+                        select.appendChild(option);
+                    });
+                    
+                    console.log('✅ AI providers loaded:', data.providers.map(p => p.name));
+                }
+            } else {
+                console.warn('⚠️ Failed to load AI providers, using defaults');
+                this.createDefaultProviderOptions();
             }
         } catch (error) {
-            console.error('Failed to load AI providers:', error);
+            console.warn('⚠️ AI providers load failed:', error.message);
+            this.createDefaultProviderOptions();
+        }
+    }
+    
+    createDefaultProviderOptions() {
+        const select = document.getElementById('aiProvider');
+        if (select) {
+            select.innerHTML = `
+                <option value="demo">Demo Mode</option>
+                <option value="openai">OpenAI</option>
+                <option value="mistral">Mistral AI</option>
+            `;
+            console.log('✅ Created default provider options');
         }
     }
     
     async loadAiStatus() {
         try {
-            const response = await fetch('/api/ai/status');
+            console.log('📡 Loading AI status...');
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('AI status timeout')), 3000)
+            );
+            
+            const response = await Promise.race([
+                fetch('/api/ai/status'),
+                timeoutPromise
+            ]);
+            
             const data = await response.json();
             
-            if (data.success) {
-                this.currentAiProvider = data.current;
-                document.getElementById('aiProvider').value = this.currentAiProvider;
+            if (data.success && data.data) {
+                this.currentAiProvider = data.data.current || 'openai';
+                const select = document.getElementById('aiProvider');
+                if (select) {
+                    select.value = this.currentAiProvider;
+                }
+                console.log('✅ AI provider loaded:', this.currentAiProvider);
+            } else {
+                console.warn('⚠️ Failed to load AI status, using fallback');
+                this.currentAiProvider = 'openai';
             }
         } catch (error) {
-            console.error('Failed to load AI status:', error);
+            console.warn('⚠️ AI status load failed:', error.message);
+            this.currentAiProvider = 'openai'; // Fallback
         }
     }
     
@@ -698,6 +910,35 @@ class MastraVoiceApp {
             document.getElementById('aiProvider').value = this.currentAiProvider;
             this.showToast('✗ Failed to switch AI provider', 'error');
         }
+    }
+
+    toggleTextInput() {
+        const textInputArea = document.getElementById('textInputArea');
+        const isHidden = textInputArea.style.display === 'none';
+        
+        if (isHidden) {
+            textInputArea.style.display = 'block';
+            textInputArea.classList.add('fade-in');
+            document.getElementById('textInput').focus();
+        } else {
+            textInputArea.style.display = 'none';
+        }
+    }
+
+    async handleAudioFile(file) {
+        console.log('📁 Audio file selected:', {
+            name: file.name,
+            size: file.size,
+            type: file.type
+        });
+        
+        if (!file.type.startsWith('audio/')) {
+            this.showToast('Please select a valid audio file', 'error');
+            return;
+        }
+        
+        this.showProcessingState('Processing uploaded audio file...');
+        await this.uploadAudio(file, file.name);
     }
 }
 

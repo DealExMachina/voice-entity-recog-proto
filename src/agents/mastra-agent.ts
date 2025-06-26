@@ -111,29 +111,37 @@ export class MastraAgent {
     };
   }
 
-  // Transcribe audio using available AI provider
+  // Transcribe audio using AI provider
   async transcribe(audioBuffer: Buffer): Promise<string> {
-    if (this.aiProvider === 'demo' || (!this.openai && !this.mistral)) {
-      // Fallback for demo purposes when no API key
-      return 'Demo transcription: We need to schedule a meeting with John Smith from Acme Corp next Tuesday at 3 PM to discuss the new product launch budget of $50,000.';
-    }
+    console.log('🎤 Transcribe called with buffer size:', audioBuffer?.length || 'undefined', 'bytes');
+    console.log('📊 Current AI provider:', this.aiProvider);
+    console.log('🔑 OpenAI available:', !!this.openai);
+    console.log('🔑 Mistral available:', !!this.mistral);
 
     try {
       let transcription: string;
       
       if (this.aiProvider === 'openai' && this.openai) {
+        console.log('🚀 Attempting OpenAI transcription...');
         transcription = await this.transcribeWithOpenAI(audioBuffer);
       } else if (this.aiProvider === 'mistral' && this.mistral) {
         // Mistral doesn't have audio transcription, fallback to demo
+        console.log('⚠️ Mistral doesn\'t support audio transcription, using demo mode');
         transcription = "Demo transcription: Mistral AI doesn't support audio transcription yet. Using sample text instead.";
       } else {
+        console.log('⚠️ No suitable AI provider available, using demo mode');
         transcription = "Demo transcription: Selected AI provider not available.";
       }
 
       return transcription;
     } catch (error) {
-      console.error(`Transcription error with ${this.aiProvider}:`, error);
+      console.error(`❌ Transcription error with ${this.aiProvider}:`, error);
+      console.error('📝 Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack trace'
+      });
       // Fallback for demo purposes
+      console.log('🔄 Falling back to demo transcription');
       return 'Sample transcription: We need to schedule a meeting with John Smith from Acme Corp next Tuesday at 3 PM to discuss the new product launch budget of $50,000.';
     }
   }
@@ -147,39 +155,63 @@ export class MastraAgent {
       throw new Error('OpenAI client not initialized');
     }
     
+    if (!audioBuffer || audioBuffer.length === 0) {
+      throw new Error('Empty audio buffer provided');
+    }
+    
     try {
-      // Write buffer to temporary file
-      const tempPath = path.join('/tmp', `audio_${Date.now()}.wav`);
+      // Detect if this is actually audio data by checking the buffer header
+      const isValidWebM = this.isValidWebMBuffer(audioBuffer);
+      const fileExtension = isValidWebM ? '.webm' : '.wav'; // Fallback to wav for other data
+      
+      console.log('🔍 Audio format detection:', { isValidWebM, fileExtension, bufferStart: audioBuffer.slice(0, 8).toString('hex') });
+      
+      const tempPath = path.join('/tmp', `audio_${Date.now()}${fileExtension}`);
       await fs.promises.writeFile(tempPath, audioBuffer);
       
-      console.log('📤 Sending audio file to OpenAI Whisper API...');
+      console.log('📤 Sending audio file to OpenAI Whisper API...', { path: tempPath, size: audioBuffer.length });
       
       const response = await this.openai.audio.transcriptions.create({
         file: fs.createReadStream(tempPath),
         model: 'whisper-1',
-        language: 'en',
-        response_format: 'text'
+        response_format: 'text',
+        language: 'en' // Specify language for better accuracy
       });
-
+      
       // Clean up temp file
-      try {
-        await fs.promises.unlink(tempPath);
-      } catch (cleanupError) {
-        console.warn('⚠️ Failed to cleanup temp file:', cleanupError);
-      }
-
-      console.log('✅ Whisper transcription successful:', response);
-      return response;
-    } catch (error: unknown) {
-      const err = error as any;
-      console.error('❌ Whisper API error details:', {
-        message: err.message,
-        status: err.status,
-        type: err.type
+      await fs.promises.unlink(tempPath).catch(() => {}); // Ignore cleanup errors
+      
+      console.log('✅ Whisper transcription successful:', response.substring(0, 100) + '...');
+      return response as string;
+      
+    } catch (error: any) {
+      console.log('❌ Whisper API error details:', {
+        message: error.message,
+        status: error.status,
+        type: error.type
       });
+      
+      // Clean up temp file on error
+      const tempFiles = await fs.promises.readdir('/tmp').catch(() => []);
+      const audioFiles = tempFiles.filter(f => f.startsWith('audio_') && f.includes(Date.now().toString().slice(0, -3)));
+      for (const file of audioFiles) {
+        await fs.promises.unlink(path.join('/tmp', file)).catch(() => {});
+      }
       
       throw error;
     }
+  }
+
+  // Check if buffer contains valid WebM data
+  private isValidWebMBuffer(buffer: Buffer): boolean {
+    if (buffer.length < 4) return false;
+    
+    // WebM files start with specific byte patterns
+    // EBML header: 0x1A 0x45 0xDF 0xA3
+    const webmHeader = Buffer.from([0x1A, 0x45, 0xDF, 0xA3]);
+    
+    // Check if buffer starts with WebM/EBML signature
+    return buffer.slice(0, 4).equals(webmHeader);
   }
 
   // Extract entities from text using AI provider
