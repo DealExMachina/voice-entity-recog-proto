@@ -107,10 +107,13 @@ export class MastraAgent {
 
   // OpenAI-specific transcription
   async transcribeWithOpenAI(audioBuffer) {
-    // For this prototype, we'll simulate transcription
-    // In a real implementation, you'd use OpenAI's Whisper API
+    // Create a File-like object that OpenAI expects
+    const audioFile = new File([audioBuffer], 'audio.wav', {
+      type: 'audio/wav'
+    });
+
     const response = await this.openai.audio.transcriptions.create({
-      file: audioBuffer,
+      file: audioFile,
       model: 'whisper-1',
       language: 'en'
     });
