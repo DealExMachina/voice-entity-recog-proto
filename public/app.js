@@ -5,6 +5,7 @@ class MastraVoiceApp {
         this.audioChunks = [];
         this.ws = null;
         this.currentAiProvider = 'demo';
+        this.isProcessing = false;
         
         this.initializeEventListeners();
         this.connectWebSocket();
@@ -80,41 +81,58 @@ class MastraVoiceApp {
 
     async startRecording() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            this.mediaRecorder = new MediaRecorder(stream);
+            // Show immediate feedback
+            this.showProcessingState('Requesting microphone access...');
+            
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    sampleRate: 44100
+                } 
+            });
+            
+            this.mediaRecorder = new MediaRecorder(stream, {
+                mimeType: 'audio/webm;codecs=opus'
+            });
             this.audioChunks = [];
             
             this.mediaRecorder.ondataavailable = (event) => {
-                this.audioChunks.push(event.data);
+                if (event.data.size > 0) {
+                    this.audioChunks.push(event.data);
+                }
             };
             
             this.mediaRecorder.onstop = () => {
                 this.processRecording();
             };
             
-            this.mediaRecorder.start();
+            this.mediaRecorder.start(100); // Collect data every 100ms for better responsiveness
             this.isRecording = true;
             
-            // Update UI
-            const recordBtn = document.getElementById('recordBtn');
-            recordBtn.innerHTML = `
-                <div class="flex items-center justify-center space-x-3">
-                    <div class="relative">
-                        <i data-lucide="square" class="w-6 h-6"></i>
-                        <div class="absolute inset-0 rounded-full bg-red-400 opacity-20 recording"></div>
-                    </div>
-                    <span>Stop Recording</span>
-                </div>
-            `;
-            recordBtn.className = 'group relative bg-gradient-to-br from-gray-100 to-slate-200 border border-gray-300 text-gray-700 px-10 py-6 rounded-2xl text-lg font-medium hover:from-gray-200 hover:to-slate-300 transition-all duration-300';
+            // Update UI with recording state
+            this.updateRecordingUI(true);
+            this.hideProcessingState();
             
-            document.getElementById('recordingStatus').textContent = 'Recording... Click to stop';
-            lucide.createIcons();
+            // Show recording timer
+            this.startRecordingTimer();
             
         } catch (error) {
             console.error('Error starting recording:', error);
+            this.hideProcessingState();
             this.showToast('Failed to start recording. Please check microphone permissions.', 'error');
         }
+    }
+
+    startRecordingTimer() {
+        this.recordingStartTime = Date.now();
+        this.recordingTimer = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            document.getElementById('recordingStatus').textContent = 
+                `Recording: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+        }, 1000);
     }
 
     stopRecording() {
@@ -123,8 +141,33 @@ class MastraVoiceApp {
             this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
             this.isRecording = false;
             
+            // Clear timer
+            if (this.recordingTimer) {
+                clearInterval(this.recordingTimer);
+                this.recordingTimer = null;
+            }
+            
             // Update UI
-            const recordBtn = document.getElementById('recordBtn');
+            this.updateRecordingUI(false);
+            this.showProcessingState('Processing audio...');
+        }
+    }
+
+    updateRecordingUI(isRecording) {
+        const recordBtn = document.getElementById('recordBtn');
+        
+        if (isRecording) {
+            recordBtn.innerHTML = `
+                <div class="flex items-center justify-center space-x-3">
+                    <div class="relative">
+                        <i data-lucide="square" class="w-6 h-6"></i>
+                        <div class="absolute inset-0 rounded-full bg-red-400 opacity-20 animate-pulse"></div>
+                    </div>
+                    <span>Stop Recording</span>
+                </div>
+            `;
+            recordBtn.className = 'group relative bg-gradient-to-br from-red-100 to-rose-200 border border-red-300 text-red-700 px-10 py-6 rounded-2xl text-lg font-medium hover:from-red-200 hover:to-rose-300 transition-all duration-300 animate-pulse';
+        } else {
             recordBtn.innerHTML = `
                 <div class="flex items-center justify-center space-x-3">
                     <div class="relative">
@@ -135,22 +178,29 @@ class MastraVoiceApp {
                 </div>
             `;
             recordBtn.className = 'group relative bg-gradient-to-br from-red-50 to-rose-100 border border-red-200 text-red-700 px-10 py-6 rounded-2xl text-lg font-medium hover:from-red-100 hover:to-rose-200 transition-all duration-300 transform hover:scale-105';
-            
-            document.getElementById('recordingStatus').textContent = 'Processing...';
-            lucide.createIcons();
         }
+        
+        lucide.createIcons();
     }
 
     async processRecording() {
         try {
-            const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
-            await this.uploadAudio(audioBlob, 'recording.wav');
+            const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm;codecs=opus' });
+            
+            // Convert to WAV for better compatibility
+            const wavBlob = await this.convertToWav(audioBlob);
+            await this.uploadAudio(wavBlob, 'recording.wav');
         } catch (error) {
             console.error('Error processing recording:', error);
             this.showToast('Failed to process recording', 'error');
+            this.hideProcessingState();
         }
-        
-        document.getElementById('recordingStatus').textContent = '';
+    }
+
+    async convertToWav(webmBlob) {
+        // For now, return the original blob
+        // In a production environment, you might want to convert to WAV
+        return webmBlob;
     }
 
     async processAudioFile() {
@@ -162,11 +212,15 @@ class MastraVoiceApp {
             return;
         }
         
+        this.showProcessingState('Processing uploaded file...');
         await this.uploadAudio(file, file.name);
     }
 
     async uploadAudio(audioBlob, filename) {
         try {
+            this.isProcessing = true;
+            this.showProcessingState(`Processing with ${this.currentAiProvider.toUpperCase()}...`);
+            
             const formData = new FormData();
             formData.append('audio', audioBlob, filename);
             
@@ -182,7 +236,11 @@ class MastraVoiceApp {
                 this.displayEntities(result.entities);
                 this.displayAnalysis(result.analysis);
                 this.loadDatabaseEntities(); // Refresh database view
-                this.showToast('Audio processed successfully!');
+                
+                // Show success with provider info
+                const providerInfo = this.currentAiProvider === 'demo' ? 'Demo Mode' : 
+                                   this.currentAiProvider === 'openai' ? 'OpenAI' : 'Mistral AI';
+                this.showToast(`✓ Audio processed successfully with ${providerInfo}!`);
             } else {
                 throw new Error(result.message || 'Processing failed');
             }
@@ -190,6 +248,9 @@ class MastraVoiceApp {
         } catch (error) {
             console.error('Upload error:', error);
             this.showToast(`Upload failed: ${error.message}`, 'error');
+        } finally {
+            this.isProcessing = false;
+            this.hideProcessingState();
         }
     }
 
@@ -203,6 +264,9 @@ class MastraVoiceApp {
         }
         
         try {
+            this.isProcessing = true;
+            this.showProcessingState(`Extracting entities with ${this.currentAiProvider.toUpperCase()}...`);
+            
             const response = await fetch('/api/extract-entities', {
                 method: 'POST',
                 headers: {
@@ -216,7 +280,11 @@ class MastraVoiceApp {
             if (result.success) {
                 this.displayEntities(result.entities);
                 this.displayAnalysis(result.analysis);
-                this.showToast('Entities extracted successfully!');
+                
+                // Show success with provider info
+                const providerInfo = this.currentAiProvider === 'demo' ? 'Demo Mode' : 
+                                   this.currentAiProvider === 'openai' ? 'OpenAI' : 'Mistral AI';
+                this.showToast(`✓ Entities extracted with ${providerInfo}!`);
             } else {
                 throw new Error(result.message || 'Extraction failed');
             }
@@ -224,7 +292,23 @@ class MastraVoiceApp {
         } catch (error) {
             console.error('Text processing error:', error);
             this.showToast(`Processing failed: ${error.message}`, 'error');
+        } finally {
+            this.isProcessing = false;
+            this.hideProcessingState();
         }
+    }
+
+    showProcessingState(message) {
+        document.getElementById('recordingStatus').innerHTML = `
+            <div class="flex items-center space-x-2">
+                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <span class="text-blue-600 font-medium">${message}</span>
+            </div>
+        `;
+    }
+
+    hideProcessingState() {
+        document.getElementById('recordingStatus').textContent = '';
     }
 
     displayTranscription(transcription) {
@@ -233,6 +317,9 @@ class MastraVoiceApp {
         
         textDiv.textContent = transcription;
         panel.style.display = 'block';
+        
+        // Smooth scroll to results
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     displayEntities(entities) {
@@ -252,8 +339,11 @@ class MastraVoiceApp {
             return;
         }
         
-        const entitiesHtml = entities.map(entity => `
-            <div class="entity-card bg-gradient-to-br from-white/80 to-slate-50/80 border border-slate-200/50 rounded-xl p-4 mb-3 hover:shadow-md transition-all duration-200">
+        // Add provider indicator
+        const providerBadge = this.getProviderBadge(entities[0]?.provider || this.currentAiProvider);
+        
+        const entitiesHtml = entities.map((entity, index) => `
+            <div class="entity-card bg-gradient-to-br from-white/80 to-slate-50/80 border border-slate-200/50 rounded-xl p-4 mb-3 hover:shadow-md transition-all duration-200 animate-fade-in" style="animation-delay: ${index * 0.1}s">
                 <div class="flex justify-between items-start">
                     <div class="flex-1">
                         <div class="flex items-center space-x-2 mb-2">
@@ -264,6 +354,7 @@ class MastraVoiceApp {
                                 <i data-lucide="zap" class="w-3 h-3"></i>
                                 <span>${Math.round(entity.confidence * 100)}%</span>
                             </div>
+                            ${entity.provider ? `<span class="text-xs px-2 py-0.5 rounded bg-${this.getProviderColor(entity.provider)}-100 text-${this.getProviderColor(entity.provider)}-600">${entity.provider.toUpperCase()}</span>` : ''}
                         </div>
                         <div class="font-medium text-slate-800 mb-1">${entity.value}</div>
                         ${entity.context ? `<div class="text-sm text-slate-500 font-light italic leading-relaxed">"${entity.context}"</div>` : ''}
@@ -272,8 +363,51 @@ class MastraVoiceApp {
             </div>
         `).join('');
         
-        container.innerHTML = entitiesHtml;
+        container.innerHTML = `
+            <div class="mb-4 flex items-center justify-between">
+                <h3 class="font-medium text-slate-700">Extracted Entities (${entities.length})</h3>
+                ${providerBadge}
+            </div>
+            ${entitiesHtml}
+        `;
+        
         lucide.createIcons();
+        
+        // Smooth scroll to results
+        container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    getProviderBadge(provider) {
+        const providerNames = {
+            'demo': 'Demo Mode',
+            'openai': 'OpenAI',
+            'mistral': 'Mistral AI'
+        };
+        
+        const providerColors = {
+            'demo': 'gray',
+            'openai': 'green',
+            'mistral': 'orange'
+        };
+        
+        const color = providerColors[provider] || 'gray';
+        const name = providerNames[provider] || provider;
+        
+        return `
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-${color}-100 text-${color}-700 border border-${color}-200">
+                <div class="w-2 h-2 bg-${color}-500 rounded-full mr-2"></div>
+                ${name}
+            </span>
+        `;
+    }
+
+    getProviderColor(provider) {
+        const colors = {
+            'demo': 'gray',
+            'openai': 'green', 
+            'mistral': 'orange'
+        };
+        return colors[provider] || 'gray';
     }
 
     displayAnalysis(analysis) {

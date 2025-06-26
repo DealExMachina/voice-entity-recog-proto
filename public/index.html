@@ -69,6 +69,16 @@
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
+
+        .animate-fade-in {
+            opacity: 0;
+            animation: fadeInSlideUp 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeInSlideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
     <script>
         tailwind.config = {
@@ -127,10 +137,21 @@
                     <div class="status-indicator w-2 h-2 bg-emerald-400 rounded-full"></div>
                     <h2 class="text-lg font-medium text-slate-700">System Status</h2>
                 </div>
-                <button id="refreshStatus" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
-                    <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-                    <span>Refresh</span>
-                </button>
+                <div class="flex items-center space-x-3">
+                    <!-- AI Provider Selector -->
+                    <div class="flex items-center space-x-2">
+                        <i data-lucide="cpu" class="w-4 h-4 text-slate-500"></i>
+                        <select id="aiProvider" class="border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent">
+                            <option value="demo">Demo Mode</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="mistral">Mistral AI</option>
+                        </select>
+                    </div>
+                    <button id="refreshStatus" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        <span>Refresh</span>
+                    </button>
+                </div>
             </div>
             <div id="statusDisplay" class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <!-- Status items will be populated here -->
