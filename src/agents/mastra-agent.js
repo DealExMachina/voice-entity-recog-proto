@@ -107,18 +107,58 @@ export class MastraAgent {
 
   // OpenAI-specific transcription
   async transcribeWithOpenAI(audioBuffer) {
-    // Create a File-like object that OpenAI expects
-    const audioFile = new File([audioBuffer], 'audio.wav', {
-      type: 'audio/wav'
-    });
+    console.log('🎤 Attempting OpenAI Whisper transcription...');
+    console.log('📊 Audio buffer size:', audioBuffer.length, 'bytes');
+    
+    try {
+      // For Node.js, OpenAI client expects a readable stream or buffer with filename
+      // Create a proper stream-like object
+      const audioStream = new Blob([audioBuffer], { type: 'audio/wav' });
+      audioStream.name = 'audio.wav';
+      
+      console.log('📤 Sending audio to OpenAI Whisper API...');
+      
+      const response = await this.openai.audio.transcriptions.create({
+        file: audioStream,
+        model: 'whisper-1',
+        language: 'en',
+        response_format: 'text'
+      });
 
-    const response = await this.openai.audio.transcriptions.create({
-      file: audioFile,
-      model: 'whisper-1',
-      language: 'en'
-    });
-
-    return response.text;
+      console.log('✅ Whisper transcription successful:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ Whisper API error details:', {
+        message: error.message,
+        status: error.status,
+        type: error.type
+      });
+      
+      // If Blob fails, try the most basic approach
+      try {
+        console.log('🔄 Trying direct buffer upload...');
+        
+        // Create a simple readable stream from buffer
+        const fs = await import('fs');
+        const { Readable } = await import('stream');
+        
+        const audioStream = Readable.from(audioBuffer);
+        audioStream.path = 'audio.wav';
+        
+        const response = await this.openai.audio.transcriptions.create({
+          file: audioStream,
+          model: 'whisper-1',
+          language: 'en',
+          response_format: 'text'
+        });
+        
+        console.log('✅ Direct buffer method successful:', response);
+        return response;
+      } catch (secondError) {
+        console.error('❌ Second attempt failed:', secondError.message);
+        throw error; // Throw original error
+      }
+    }
   }
 
   // Extract entities from text using AI provider
@@ -157,30 +197,65 @@ export class MastraAgent {
 
   // OpenAI-specific entity extraction
   async extractWithOpenAI(text) {
-    const prompt = this.getEntityExtractionPrompt(text);
+    const systemPrompt = `You are an expert Named Entity Recognition (NER) system specialized in extracting structured business information from conversational text.
 
+CRITICAL INSTRUCTIONS:
+1. Return a JSON object with an "entities" array
+2. Do NOT include any explanatory text, markdown, or formatting
+3. Each entity MUST have exactly these fields: type, value, confidence, context
+4. Confidence should be a number between 0.1 and 1.0
+5. Context should be a short phrase (10-30 words) containing the entity
+
+ENTITY TYPES TO EXTRACT:
+- person: Full names of individuals (not titles or roles)
+- organization: Company names, departments, institutions
+- location: Cities, countries, addresses, buildings
+- event: Meetings, conferences, appointments, deadlines
+- product: Specific products, services, or projects
+- financial: Monetary amounts, budgets, costs, revenue
+- contact: Email addresses, phone numbers
+- date: Specific dates, days of week, relative dates
+- time: Clock times, time ranges, durations
+
+EXAMPLE OUTPUT FORMAT:
+{
+  "entities": [
+    {"type": "person", "value": "John Smith", "confidence": 0.95, "context": "John Smith from Microsoft"},
+    {"type": "organization", "value": "Microsoft", "confidence": 0.98, "context": "John Smith from Microsoft"},
+    {"type": "financial", "value": "$50,000", "confidence": 0.92, "context": "budget of $50,000"}
+  ]
+}`;
+
+    const userPrompt = `Extract entities from this text: "${text}"`;
+
+    console.log('🔍 Sending to OpenAI for entity extraction...');
+    
     const response = await this.openai.chat.completions.create({
-      model: 'gpt-4o-mini', // Use more cost-effective model
+      model: 'gpt-4o-mini',
       messages: [
         {
           role: 'system',
-          content: 'You are an expert entity extraction system. Extract entities accurately and return only valid JSON.'
+          content: systemPrompt
         },
         {
           role: 'user',
-          content: prompt
+          content: userPrompt
         }
       ],
       temperature: 0.1,
-      max_tokens: 1000
+      max_tokens: 1500,
+      response_format: { type: "json_object" }
     });
 
     const extractedText = response.choices[0].message.content.trim();
+    console.log('📥 OpenAI response:', extractedText);
     
     try {
-      return JSON.parse(extractedText);
+      const parsed = JSON.parse(extractedText);
+      // If it's wrapped in an object, extract the array
+      return Array.isArray(parsed) ? parsed : (parsed.entities || []);
     } catch (parseError) {
-      console.error('OpenAI JSON parse error:', parseError);
+      console.error('OpenAI JSON parse error:', parseError, 'Raw response:', extractedText);
       return this.generateDemoEntities(text);
     }
   }
