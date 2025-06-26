@@ -1,4 +1,11 @@
-import { insertEntity, insertConversation, getAllEntities, getEntitiesByType } from '../database/duckdb.js';
+import { 
+  insertEntity, 
+  insertConversation, 
+  getAllEntities, 
+  getEntitiesByType,
+  getConversationById,
+  initializeDatabase 
+} from '../database/duckdb-simple.ts';
 
 export class McpService {
   constructor() {
@@ -11,7 +18,9 @@ export class McpService {
 
   async initialize() {
     console.log('🔗 MCP Service initializing...');
-    // Future: Connect to actual MCP server if needed
+    // Initialize the database with DuckDB Neo
+    await initializeDatabase();
+    console.log('✅ MCP Service initialized with DuckDB Neo');
     return true;
   }
 
@@ -69,6 +78,17 @@ export class McpService {
           },
           required: ['transcription']
         }
+      },
+      {
+        name: 'get_conversation',
+        description: 'Retrieve a conversation by ID',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Conversation ID' }
+          },
+          required: ['id']
+        }
       }
     ];
   }
@@ -85,6 +105,9 @@ export class McpService {
       case 'store_conversation':
         return this.storeConversation(args);
       
+      case 'get_conversation':
+        return this.getConversation(args);
+      
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
@@ -98,7 +121,7 @@ export class McpService {
         value: entity.value,
         confidence: entity.confidence || 1.0,
         context: entity.context || '',
-        conversationId: entity.conversationId || null,
+        source_conversation_id: entity.conversationId || null,
         metadata: entity.metadata || {}
       });
 
@@ -159,7 +182,7 @@ export class McpService {
     try {
       const conversationId = await insertConversation({
         transcription: conversation.transcription,
-        audioDuration: conversation.audioDuration || 0,
+        audio_duration: conversation.audioDuration || null,
         metadata: conversation.metadata || {}
       });
 
@@ -170,6 +193,30 @@ export class McpService {
       };
     } catch (error) {
       console.error('Error storing conversation:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  async getConversation(options) {
+    try {
+      const conversation = await getConversationById(options.id);
+      
+      if (!conversation) {
+        return {
+          success: false,
+          error: 'Conversation not found'
+        };
+      }
+
+      return {
+        success: true,
+        conversation
+      };
+    } catch (error) {
+      console.error('Error retrieving conversation:', error);
       return {
         success: false,
         error: error.message

@@ -83,37 +83,19 @@ router.post('/transcribe', uploadLimiter, upload.single('audio'), async (req, re
 // Process audio (transcribe + extract entities) (with AI rate limiting)
 router.post('/process-audio', aiLimiter, upload.single('audio'), async (req, res) => {
   try {
-    const { mastraAgent, mcpService } = req.app.locals;
+    const { mastraAgent } = req.app.locals;
     
     if (!req.file) {
       return res.status(400).json({ error: 'No audio file provided' });
     }
 
-    // Process voice input
+    // Process voice input (includes transcription, entity extraction, analysis, and storage via MCP)
     const result = await mastraAgent.processVoiceInput(req.file.buffer);
-    
-    // Store conversation
-    const conversationResult = await mcpService.storeConversation({
-      transcription: result.transcription,
-      audioDuration: req.body.duration || 0,
-      metadata: {
-        filename: req.file.originalname,
-        fileSize: req.file.size
-      }
-    });
-
-    // Store entities
-    if (result.entities.length > 0) {
-      await mcpService.storeEntities(result.entities.map(entity => ({
-        ...entity,
-        conversationId: conversationResult.conversationId
-      })));
-    }
 
     res.json({
       success: true,
       ...result,
-      conversationId: conversationResult.conversationId
+      provider: mastraAgent.aiProvider
     });
   } catch (error) {
     console.error('Audio processing error:', error);
@@ -124,30 +106,38 @@ router.post('/process-audio', aiLimiter, upload.single('audio'), async (req, res
   }
 });
 
-// Extract entities from text (with AI rate limiting)
+// Process text input for entity extraction
 router.post('/extract-entities', aiLimiter, async (req, res) => {
   try {
     const { text } = req.body;
     const { mastraAgent } = req.app.locals;
     
-    if (!text) {
-      return res.status(400).json({ error: 'No text provided' });
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Text input is required'
+      });
     }
 
-    const entities = await mastraAgent.extractEntities(text);
-    const analysis = await mastraAgent.analyzeEntities(entities);
-
+    console.log(`🔍 Processing text with ${mastraAgent.aiProvider}: "${text.substring(0, 50)}..."`);
+    
+    // Use the new processTextInput method
+    const result = await mastraAgent.processTextInput(text);
+    
     res.json({
       success: true,
-      text,
-      entities,
-      analysis
+      entities: result.entities,
+      analysis: result.analysis,
+      conversationId: result.conversationId,
+      provider: mastraAgent.aiProvider,
+      processedAt: result.processedAt
     });
+
   } catch (error) {
-    console.error('Entity extraction error:', error);
-    res.status(500).json({ 
-      error: 'Entity extraction failed',
-      message: error.message 
+    console.error('Text processing error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Text processing failed'
     });
   }
 });
@@ -158,7 +148,7 @@ router.get('/entities', async (req, res) => {
     const { mcpService } = req.app.locals;
     const { type, limit } = req.query;
     
-    const result = await mcpService.getEntities({
+    const result = await mcpService.executeTool('get_entities', {
       type,
       limit: limit ? parseInt(limit) : undefined
     });
@@ -179,7 +169,7 @@ router.post('/entities', async (req, res) => {
     const { mcpService } = req.app.locals;
     const entity = req.body;
     
-    const result = await mcpService.storeEntity(entity);
+    const result = await mcpService.executeTool('store_entity', entity);
     res.json(result);
   } catch (error) {
     console.error('Add entity error:', error);
@@ -198,7 +188,10 @@ router.get('/stats', async (req, res) => {
     
     res.json({
       success: true,
-      stats
+      stats,
+      databaseEngine: 'DuckDB Neo',
+      typeSystem: 'TypeScript',
+      mcpService: 'Type-safe'
     });
   } catch (error) {
     console.error('Get stats error:', error);
@@ -210,14 +203,27 @@ router.get('/stats', async (req, res) => {
 });
 
 // Get MCP capabilities
-router.get('/mcp/capabilities', (req, res) => {
-  const { mcpService } = req.app.locals;
-  
-  res.json({
-    capabilities: mcpService.capabilities,
-    tools: mcpService.getTools(),
-    resources: mcpService.getResources()
-  });
+router.get('/mcp/capabilities', async (req, res) => {
+  try {
+    const { mcpService } = req.app.locals;
+    
+    const resources = await mcpService.getResources();
+    
+    res.json({
+      success: true,
+      capabilities: mcpService.capabilities,
+      tools: mcpService.getTools(),
+      resources: resources,
+      typeSystem: 'TypeScript',
+      database: 'DuckDB Neo'
+    });
+  } catch (error) {
+    console.error('MCP capabilities error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get MCP capabilities',
+      message: error.message 
+    });
+  }
 });
 
 // Execute MCP tool

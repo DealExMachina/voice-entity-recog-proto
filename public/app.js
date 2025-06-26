@@ -664,10 +664,16 @@ class MastraVoiceApp {
             
             if (data.success) {
                 this.currentAiProvider = data.current;
-                document.getElementById('aiProvider').value = this.currentAiProvider;
+                const selectElement = document.getElementById('aiProvider');
+                if (selectElement) {
+                    selectElement.value = this.currentAiProvider;
+                }
+                console.log('Current AI provider updated to:', this.currentAiProvider);
             }
         } catch (error) {
             console.error('Failed to load AI status:', error);
+            // Default to demo mode if API fails
+            this.currentAiProvider = 'demo';
         }
     }
     
@@ -687,6 +693,7 @@ class MastraVoiceApp {
             
             if (data.success) {
                 this.currentAiProvider = newProvider;
+                console.log('AI provider switched to:', newProvider);
                 this.showToast(`✓ Switched to ${newProvider.toUpperCase()}`);
             } else {
                 // Revert selection on failure

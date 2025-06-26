@@ -2,7 +2,7 @@ import rateLimit from 'express-rate-limit';
 
 // Rate limiting configuration
 const createRateLimiter = (options = {}) => {
-  const isRateLimitEnabled = process.env.RATE_LIMIT_ENABLED !== 'false';
+  const isRateLimitEnabled = process.env.RATE_LIMIT_ENABLED === 'true';
   
   if (!isRateLimitEnabled) {
     // Return a no-op middleware if rate limiting is disabled
@@ -19,8 +19,16 @@ const createRateLimiter = (options = {}) => {
     },
     standardHeaders: true,
     legacyHeaders: false,
+    // Fix trust proxy issue by using a custom key generator
+    keyGenerator: (req) => {
+      // Use X-Forwarded-For in production, req.ip locally
+      return req.headers['x-forwarded-for']?.split(',')[0] || req.ip || req.connection.remoteAddress;
+    },
+    // Skip trust proxy validation for security
+    trustProxy: false,
     handler: (req, res) => {
-      console.log(`Rate limit exceeded for IP: ${req.ip}, Path: ${req.path}`);
+      const clientIP = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
+      console.log(`Rate limit exceeded for IP: ${clientIP}, Path: ${req.path}`);
       res.status(429).json({
         error: 'Rate limit exceeded',
         message: 'Too many requests. Please try again later.',

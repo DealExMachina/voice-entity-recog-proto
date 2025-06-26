@@ -1,32 +1,44 @@
-name: mastra-voice-entity-extraction
+name: voice-entity-app
 
 services:
-  - name: web
-    type: web
+  - name: api
     git:
-      repository: github.com/${{ github.repository }}
+      url: https://github.com/DealExMachina/voice-entity-recog-proto
       branch: main
-      build_command: npm ci
-      run_command: npm start
-    instance_type: nano
-    regions:
-      - fra
     ports:
-      - port: 3000
+      - port: 8000
         protocol: http
     env:
-      - key: PORT
-        value: "3000"
-      - key: NODE_ENV
+      - name: NODE_ENV
         value: production
-      - key: DB_PATH
-        value: /tmp/entities.db
-      - key: OPENAI_API_KEY
-        scope: secret
-    health_checks:
-      http:
-        path: /api/health
-        port: 3000
-    scaling:
+      - name: PORT
+        value: "8000"
+      - name: DB_PATH
+        value: "/tmp/entities.db"
+      - name: RATE_LIMIT_ENABLED
+        value: "true"
+      - name: RATE_LIMIT_WINDOW_MINUTES
+        value: "15"
+      - name: RATE_LIMIT_MAX_REQUESTS
+        value: "100"
+      - name: AI_PROVIDER
+        value: "openai"
+      - name: OPENAI_API_KEY
+        from_secret: OPENAI_API_KEY
+      - name: MISTRAL_API_KEY
+        from_secret: MISTRAL_API_KEY
+    build:
+      buildpack: nodejs
+    regions:
+      - fra
+    scale:
       min: 1
-      max: 3 
+      max: 1
+    lifecycle:
+      health_check:
+        http:
+          path: /api/health
+          port: 8000
+      restarts:
+        policy: on_failure
+        max_count: 3 

@@ -82,19 +82,30 @@ export function getDatabase() {
 export async function executeQuery(sql, params = []) {
   return new Promise((resolve, reject) => {
     const database = getDatabase();
+    
+    console.log('🔍 executeQuery called with:');
+    console.log('  SQL:', sql);
+    console.log('  Params:', params);
+    console.log('  Param count:', params.length);
+    console.log('  Param types:', params.map(p => typeof p));
+    
     if (params.length === 0) {
       database.all(sql, (err, rows) => {
         if (err) {
+          console.error('🔍 executeQuery error (no params):', err);
           reject(err);
         } else {
+          console.log('🔍 executeQuery success (no params):', rows);
           resolve(rows);
         }
       });
     } else {
       database.all(sql, params, (err, rows) => {
         if (err) {
+          console.error('🔍 executeQuery error (with params):', err);
           reject(err);
         } else {
+          console.log('🔍 executeQuery success (with params):', rows);
           resolve(rows);
         }
       });
@@ -102,32 +113,90 @@ export async function executeQuery(sql, params = []) {
   });
 }
 
-export async function insertEntity(entity) {
+// Test function to validate parameter binding
+export async function testParameterBinding() {
+  const sql = 'SELECT ? as param1, ? as param2, ? as param3';
+  const params = ['test1', 'test2', 'test3'];
+  
+  try {
+    const result = await executeQuery(sql, params);
+    console.log('✅ Parameter binding test successful:', result);
+    return result;
+  } catch (error) {
+    console.error('❌ Parameter binding test failed:', error);
+    throw error;
+  }
+}
+
+export async function insertConversation(conversation) {
+  console.log('🔍 insertConversation called with:', JSON.stringify(conversation, null, 2));
+  
+  // DuckDB uses $1, $2, $3 syntax for parameters, not ?
   const sql = `
-    INSERT INTO entities (type, value, confidence, context, source_conversation_id, metadata)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO conversations (transcription, audio_duration, metadata)
+    VALUES ($1, $2, $3)
     RETURNING id
   `;
   
-  const params = [
-    entity.type,
-    entity.value,
-    entity.confidence,
-    entity.context,
-    entity.conversationId,
-    JSON.stringify(entity.metadata || {})
-  ];
+  // Ensure all parameters are properly defined and not undefined
+  const transcription = String(conversation.transcription || '');
+  const audioDuration = conversation.audioDuration === null ? null : Number(conversation.audioDuration || 0);
+  const metadata = JSON.stringify(conversation.metadata || {});
+  
+  const params = [transcription, audioDuration, metadata];
 
-  const result = await executeQuery(sql, params);
-  return result[0]?.id;
+  console.log('🔍 insertConversation SQL:', sql);
+  console.log('🔍 insertConversation params:', params);
+
+  try {
+    const result = await executeQuery(sql, params);
+    console.log('🔍 insertConversation result:', result);
+    return result[0]?.id;
+  } catch (error) {
+    console.error('🔍 insertConversation error:', error);
+    throw error;
+  }
+}
+
+export async function insertEntity(entity) {
+  console.log('🔍 insertEntity called with:', JSON.stringify(entity, null, 2));
+  
+  // DuckDB uses $1, $2, $3, $4, $5, $6 syntax for parameters, not ?
+  const sql = `
+    INSERT INTO entities (type, value, confidence, context, source_conversation_id, metadata)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    RETURNING id
+  `;
+  
+  // Ensure all parameters are properly defined
+  const type = entity.type || 'unknown';
+  const value = entity.value || '';
+  const confidence = entity.confidence || 0.8;
+  const context = entity.context || '';
+  const conversationId = entity.conversationId === null ? null : entity.conversationId;
+  const metadata = JSON.stringify(entity.metadata || {});
+  
+  const params = [type, value, confidence, context, conversationId, metadata];
+
+  console.log('🔍 insertEntity SQL:', sql);
+  console.log('🔍 insertEntity params:', params);
+
+  try {
+    const result = await executeQuery(sql, params);
+    console.log('🔍 insertEntity result:', result);
+    return result[0]?.id;
+  } catch (error) {
+    console.error('🔍 insertEntity error:', error);
+    throw error;
+  }
 }
 
 export async function getEntitiesByType(type, limit = 100) {
   const sql = `
     SELECT * FROM entities 
-    WHERE type = ? 
+    WHERE type = $1 
     ORDER BY created_at DESC 
-    LIMIT ?
+    LIMIT $2
   `;
   return executeQuery(sql, [type, limit]);
 }
@@ -136,24 +205,7 @@ export async function getAllEntities(limit = 100) {
   const sql = `
     SELECT * FROM entities 
     ORDER BY created_at DESC 
-    LIMIT ?
+    LIMIT $1
   `;
   return executeQuery(sql, [limit]);
-}
-
-export async function insertConversation(conversation) {
-  const sql = `
-    INSERT INTO conversations (transcription, audio_duration, metadata)
-    VALUES (?, ?, ?)
-    RETURNING id
-  `;
-  
-  const params = [
-    conversation.transcription,
-    conversation.audioDuration,
-    JSON.stringify(conversation.metadata || {})
-  ];
-
-  const result = await executeQuery(sql, params);
-  return result[0]?.id;
 } 

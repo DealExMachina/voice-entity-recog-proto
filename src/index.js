@@ -6,7 +6,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { initializeDatabase } from './database/duckdb.js';
 import { MastraAgent } from './agents/mastra-agent.js';
 import { McpService } from './services/mcp-service.js';
 import { generalLimiter, healthLimiter } from './middleware/rateLimiter.js';
@@ -24,9 +23,15 @@ const wss = new WebSocketServer({ server });
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.set('trust proxy', true); // Trust reverse proxies (needed for Koyeb)
-app.use(cors());
+app.set('trust proxy', false);
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' ? 
+    ['https://voice-entity-app-dealexmachina-db6bcb98.koyeb.app'] : 
+    ['http://localhost:3000'],
+  credentials: true
+}));
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Apply rate limiting
@@ -39,19 +44,15 @@ let mcpService;
 
 async function initializeServices() {
   try {
-    // Initialize database
-    await initializeDatabase();
-    console.log('✅ Database initialized');
-
-    // Initialize MCP service
+    // Initialize TypeScript MCP service with DuckDB Neo
     mcpService = new McpService();
     await mcpService.initialize();
-    console.log('✅ MCP service initialized');
+    console.log('✅ MCP service initialized with DuckDB Neo');
 
-    // Initialize Mastra agent
-    mastraAgent = new MastraAgent();
+    // Initialize Mastra agent with TypeScript MCP service
+    mastraAgent = new MastraAgent(mcpService);
     await mastraAgent.initialize();
-    console.log('✅ Mastra agent initialized');
+    console.log('✅ Mastra agent initialized with TypeScript MCP');
 
     // Make services available to routes
     app.locals.mastraAgent = mastraAgent;

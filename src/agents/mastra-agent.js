@@ -2,10 +2,11 @@ import OpenAI from 'openai';
 import { Mistral } from '@mistralai/mistralai';
 
 export class MastraAgent {
-  constructor() {
+  constructor(mcpService = null) {
     this.openai = null;
     this.mistral = null;
     this.aiProvider = process.env.AI_PROVIDER || 'openai';
+    this.mcpService = mcpService; // MCP service for database operations
     
     // Initialize OpenAI if API key is available
     if (process.env.OPENAI_API_KEY) {
@@ -25,6 +26,11 @@ export class MastraAgent {
       'person', 'organization', 'location', 'event', 
       'product', 'financial', 'contact', 'date', 'time'
     ];
+  }
+
+  // Set MCP service (dependency injection)
+  setMcpService(mcpService) {
+    this.mcpService = mcpService;
   }
 
   async initialize() {
@@ -369,6 +375,64 @@ EXAMPLE OUTPUT FORMAT:
     return analysis;
   }
 
+  // Store conversation and entities using MCP service
+  async storeConversationAndEntities(transcription, entities, audioDuration = null) {
+    if (!this.mcpService) {
+      throw new Error('MCP service not available for database operations');
+    }
+
+    try {
+      // Store conversation using MCP tool
+      console.log('📝 Storing conversation via MCP...');
+      const conversationResult = await this.mcpService.executeTool('store_conversation', {
+        transcription: transcription || '',
+        audioDuration: audioDuration || null,
+        metadata: {
+          provider: this.aiProvider,
+          processedAt: new Date().toISOString(),
+          entityCount: entities.length
+        }
+      });
+
+      if (!conversationResult.success) {
+        throw new Error(`Failed to store conversation: ${conversationResult.error}`);
+      }
+
+      console.log('✅ Conversation stored with ID:', conversationResult.conversationId);
+
+      // Store each entity using MCP tool
+      for (const entity of entities) {
+        try {
+          console.log(`📋 Storing entity via MCP: ${entity.type} - ${entity.value}`);
+          const entityResult = await this.mcpService.executeTool('store_entity', {
+            type: entity.type || 'unknown',
+            value: entity.value || '',
+            confidence: entity.confidence || 0.8,
+            context: entity.context || '',
+            conversationId: conversationResult.conversationId,
+            metadata: {
+              provider: entity.provider || this.aiProvider,
+              extractedAt: entity.extractedAt || new Date().toISOString()
+            }
+          });
+
+          if (entityResult.success) {
+            console.log(`✅ Entity stored: ${entity.type} - ${entity.value} (ID: ${entityResult.entityId})`);
+          } else {
+            console.error(`❌ Failed to store entity: ${entityResult.error}`);
+          }
+        } catch (entityError) {
+          console.error('Error storing entity via MCP:', entityError);
+        }
+      }
+
+      return conversationResult.conversationId;
+    } catch (error) {
+      console.error('Error storing via MCP service:', error);
+      throw error;
+    }
+  }
+
   // Process voice input end-to-end
   async processVoiceInput(audioBuffer) {
     try {
@@ -381,14 +445,46 @@ EXAMPLE OUTPUT FORMAT:
       // Step 3: Analyze entities
       const analysis = await this.analyzeEntities(entities);
 
+      // Step 4: Store in database
+      const conversationId = await this.storeConversationAndEntities(
+        transcription, 
+        entities,
+        audioBuffer ? audioBuffer.length / 16000 : null // Rough audio duration estimate
+      );
+
       return {
         transcription,
         entities,
         analysis,
+        conversationId,
         processedAt: new Date().toISOString()
       };
     } catch (error) {
       console.error('Voice processing error:', error);
+      throw error;
+    }
+  }
+
+  // Process text input end-to-end
+  async processTextInput(text) {
+    try {
+      // Step 1: Extract entities
+      const entities = await this.extractEntities(text);
+      
+      // Step 2: Analyze entities
+      const analysis = await this.analyzeEntities(entities);
+
+      // Step 3: Store in database
+      const conversationId = await this.storeConversationAndEntities(text, entities);
+
+      return {
+        entities,
+        analysis,
+        conversationId,
+        processedAt: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Text processing error:', error);
       throw error;
     }
   }
