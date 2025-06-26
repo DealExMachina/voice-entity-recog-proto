@@ -24,6 +24,7 @@ const wss = new WebSocketServer({ server });
 const PORT = process.env.PORT || 3000;
 
 // Middleware
+app.set('trust proxy', true); // Trust reverse proxies (needed for Koyeb)
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '../public')));
