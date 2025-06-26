@@ -38,6 +38,18 @@ jobs:
           type=sha,prefix=sha-
           type=raw,value=latest,enable={{is_default_branch}}
 
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run tests
+      run: npm test
+
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
