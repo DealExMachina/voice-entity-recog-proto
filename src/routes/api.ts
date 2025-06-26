@@ -30,7 +30,7 @@ const upload = multer({
   limits: {
     fileSize: 10 * 1024 * 1024 // 10MB limit
   },
-  fileFilter: (req: Request, file: any, cb: FileFilterCallback) => {
+  fileFilter: (req: Request, file: any, cb: any) => {
     // Log upload details for debugging
     console.log('File upload debug:', {
       originalname: file.originalname,
@@ -393,7 +393,7 @@ router.get('/ai/status', (req: Request, res: Response) => {
 router.post('/ai/provider', (req: Request, res: Response) => {
   try {
     const { mastraAgent } = req.app.locals;
-    const { provider } = req.body as { provider?: string };
+    const { provider }: { provider?: string } = req.body;
     
     if (!provider) {
       return res.status(400).json({ 
