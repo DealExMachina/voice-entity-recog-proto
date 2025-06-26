@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { aiLimiter, uploadLimiter } from '../middleware/rateLimiter.js';
+import { AppError, ErrorHandler, withTimeout, timeouts } from '../utils/errorHandler.js';
 
 const router = express.Router();
 
@@ -42,17 +43,64 @@ const upload = multer({
 });
 
 // Health check
-router.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    timestamp: new Date().toISOString(),
-    services: {
-      database: 'connected',
-      mcp: 'active',
-      mastra: 'ready'
+router.get('/health', ErrorHandler.wrapAsync(async (req, res) => {
+  const { mastraAgent, mcpService } = req.app.locals;
+  
+  // Check service availability
+  const services = {
+    database: 'unknown',
+    mcp: 'unknown',
+    mastra: 'unknown',
+    ai_providers: {}
+  };
+  
+  try {
+    // Check MCP service with timeout
+    if (mcpService) {
+      await withTimeout(mcpService.getStats(), 5000, 'database');
+      services.mcp = 'active';
+      services.database = 'connected';
+    } else {
+      services.mcp = 'unavailable';
+      services.database = 'unavailable';
     }
+  } catch (error) {
+    services.mcp = 'error';
+    services.database = 'error';
+  }
+  
+  try {
+    // Check Mastra agent
+    if (mastraAgent) {
+      const providerStatus = mastraAgent.getProviderStatus();
+      services.mastra = 'ready';
+      services.ai_providers = {
+        current: providerStatus.current,
+        available: providerStatus.available,
+        openai: providerStatus.openaiAvailable ? 'available' : 'unavailable',
+        mistral: providerStatus.mistralAvailable ? 'available' : 'unavailable'
+      };
+    } else {
+      services.mastra = 'unavailable';
+      services.ai_providers = { current: 'none', available: ['demo'] };
+    }
+  } catch (error) {
+    services.mastra = 'error';
+    services.ai_providers = { current: 'error', available: [] };
+  }
+  
+  // Determine overall status
+  const allServicesHealthy = services.mcp === 'active' && services.mastra === 'ready';
+  const status = allServicesHealthy ? 'healthy' : 'degraded';
+  
+  res.json({ 
+    status,
+    timestamp: new Date().toISOString(),
+    services,
+    uptime: process.uptime(),
+    version: process.env.npm_package_version || '1.0.0'
   });
-});
+}));
 
 // Transcribe audio (with upload rate limiting)
 router.post('/transcribe', uploadLimiter, upload.single('audio'), async (req, res) => {
@@ -81,48 +129,99 @@ router.post('/transcribe', uploadLimiter, upload.single('audio'), async (req, re
 });
 
 // Process audio (transcribe + extract entities) (with AI rate limiting)
-router.post('/process-audio', aiLimiter, upload.single('audio'), async (req, res) => {
-  try {
-    const { mastraAgent } = req.app.locals;
-    
-    if (!req.file) {
-      return res.status(400).json({ error: 'No audio file provided' });
-    }
+router.post('/process-audio', aiLimiter, upload.single('audio'), ErrorHandler.wrapAsync(async (req, res) => {
+  const { mastraAgent } = req.app.locals;
+  
+  // Check if services are available
+  if (!mastraAgent) {
+    throw new AppError('AI services are temporarily unavailable', 'ai_provider', 503);
+  }
+  
+  if (!req.file) {
+    throw new AppError('No audio file provided', 'validation', 400, 'Please select an audio file to upload.');
+  }
 
-    // Process voice input (includes transcription, entity extraction, analysis, and storage via MCP)
-    const result = await mastraAgent.processVoiceInput(req.file.buffer);
+  // Validate file size and type
+  if (req.file.size > 10 * 1024 * 1024) { // 10MB limit
+    throw new AppError('File too large', 'upload', 400, 'Audio file must be smaller than 10MB.');
+  }
+
+  console.log(`🎵 Processing audio file: ${req.file.originalname} (${req.file.size} bytes)`);
+
+  try {
+    // Process voice input with timeout (includes transcription, entity extraction, analysis, and storage via MCP)
+    const result = await withTimeout(
+      mastraAgent.processVoiceInput(req.file.buffer),
+      timeouts.TRANSCRIPTION, // 2 minutes for audio processing
+      'transcription'
+    );
+
+    console.log(`✅ Audio processing completed for ${req.file.originalname}`);
 
     res.json({
       success: true,
       ...result,
-      provider: mastraAgent.aiProvider
+      provider: mastraAgent.aiProvider,
+      filename: req.file.originalname,
+      fileSize: req.file.size
     });
   } catch (error) {
     console.error('Audio processing error:', error);
-    res.status(500).json({ 
-      error: 'Audio processing failed',
-      message: error.message 
-    });
+    
+    // Provide specific error messages based on error type
+    if (error.message.includes('timeout')) {
+      throw new AppError('Audio processing timed out', 'timeout', 408, 
+        'Your audio file took too long to process. Please try with a shorter audio file.');
+    } else if (error.message.includes('transcription') || error.message.includes('audio')) {
+      throw new AppError('Audio processing failed', 'transcription', 400, 
+        'Unable to process the audio file. Please ensure it\'s a valid audio format.');
+    } else if (error.message.includes('API') || error.message.includes('provider')) {
+      throw new AppError('AI service error', 'ai_provider', 503, 
+        'The AI service is temporarily unavailable. Please try again later.');
+    } else {
+      throw new AppError('Audio processing failed', 'general', 500, 
+        'An error occurred while processing your audio. Please try again.');
+    }
   }
-});
+}));
 
 // Process text input for entity extraction
-router.post('/extract-entities', aiLimiter, async (req, res) => {
-  try {
-    const { text } = req.body;
-    const { mastraAgent } = req.app.locals;
-    
-    if (!text || typeof text !== 'string') {
-      return res.status(400).json({
-        success: false,
-        message: 'Text input is required'
-      });
-    }
+router.post('/extract-entities', aiLimiter, ErrorHandler.wrapAsync(async (req, res) => {
+  const { text } = req.body;
+  const { mastraAgent } = req.app.locals;
+  
+  // Check if services are available
+  if (!mastraAgent) {
+    throw new AppError('AI services are temporarily unavailable', 'ai_provider', 503);
+  }
+  
+  // Validate input
+  if (!text || typeof text !== 'string') {
+    throw new AppError('Text input is required', 'validation', 400, 
+      'Please enter some text to analyze.');
+  }
+  
+  if (text.trim().length === 0) {
+    throw new AppError('Empty text provided', 'validation', 400, 
+      'Please enter some text to analyze.');
+  }
+  
+  if (text.length > 10000) { // 10k character limit
+    throw new AppError('Text too long', 'validation', 400, 
+      'Text must be shorter than 10,000 characters.');
+  }
 
-    console.log(`🔍 Processing text with ${mastraAgent.aiProvider}: "${text.substring(0, 50)}..."`);
+  console.log(`🔍 Processing text with ${mastraAgent.aiProvider}: "${text.substring(0, 50)}..."`);
+  
+  try {
+    // Use the new processTextInput method with timeout
+    const result = await withTimeout(
+      mastraAgent.processTextInput(text),
+      timeouts.AI_REQUEST, // 45 seconds for AI processing
+      'ai_provider'
+    );
     
-    // Use the new processTextInput method
-    const result = await mastraAgent.processTextInput(text);
+    console.log(`✅ Text processing completed (${result.entities.length} entities found)`);
     
     res.json({
       success: true,
@@ -130,17 +229,28 @@ router.post('/extract-entities', aiLimiter, async (req, res) => {
       analysis: result.analysis,
       conversationId: result.conversationId,
       provider: mastraAgent.aiProvider,
-      processedAt: result.processedAt
+      processedAt: result.processedAt,
+      inputLength: text.length
     });
-
   } catch (error) {
     console.error('Text processing error:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Text processing failed'
-    });
+    
+    // Provide specific error messages based on error type
+    if (error.message.includes('timeout')) {
+      throw new AppError('Text processing timed out', 'timeout', 408, 
+        'The text analysis took too long to complete. Please try with shorter text.');
+    } else if (error.message.includes('API') || error.message.includes('provider')) {
+      throw new AppError('AI service error', 'ai_provider', 503, 
+        'The AI service is temporarily unavailable. Please try again later.');
+    } else if (error.message.includes('rate') || error.message.includes('quota')) {
+      throw new AppError('Rate limit exceeded', 'ratelimit', 429, 
+        'AI service rate limit exceeded. Please wait a moment before trying again.');
+    } else {
+      throw new AppError('Text processing failed', 'general', 500, 
+        'An error occurred while analyzing your text. Please try again.');
+    }
   }
-});
+}));
 
 // Get entities
 router.get('/entities', async (req, res) => {

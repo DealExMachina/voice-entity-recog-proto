@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { Mistral } from '@mistralai/mistralai';
+import { AppError, withTimeout, timeouts, CircuitBreaker } from '../utils/errorHandler.js';
 
 export class MastraAgent {
   constructor(mcpService = null) {
@@ -8,17 +9,24 @@ export class MastraAgent {
     this.aiProvider = process.env.AI_PROVIDER || 'openai';
     this.mcpService = mcpService; // MCP service for database operations
     
+    // Initialize circuit breakers for AI providers
+    this.openaiCircuitBreaker = new CircuitBreaker(3, 30000); // 3 failures, 30s reset
+    this.mistralCircuitBreaker = new CircuitBreaker(3, 30000);
+    
     // Initialize OpenAI if API key is available
     if (process.env.OPENAI_API_KEY) {
       this.openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY
+        apiKey: process.env.OPENAI_API_KEY,
+        timeout: 60000, // 60 second timeout
+        maxRetries: 2
       });
     }
     
     // Initialize Mistral if API key is available
     if (process.env.MISTRAL_API_KEY) {
       this.mistral = new Mistral({
-        apiKey: process.env.MISTRAL_API_KEY
+        apiKey: process.env.MISTRAL_API_KEY,
+        timeout: 60000 // 60 second timeout
       });
     }
     
