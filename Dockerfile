@@ -1,11 +1,13 @@
 # Use Node.js 22 LTS
-FROM node:22-alpine AS base
+FROM node:22-slim AS base
 
 # Set working directory
 WORKDIR /app
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Install curl for health checks and update package list
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
@@ -19,14 +21,16 @@ COPY . .
 # Build the application
 RUN npm run build
 
-# Production stage
-FROM node:22-alpine AS production
+# Production stage - use standard Linux instead of Alpine for DuckDB compatibility
+FROM node:22-slim AS production
 
 # Set working directory
 WORKDIR /app
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Install curl for health checks and update package list
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
@@ -41,9 +45,9 @@ COPY --from=base /app/public ./public
 # Create data directory for database
 RUN mkdir -p /app/data
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S sales-buddy -u 1001
+# Create non-root user (Debian syntax)
+RUN groupadd -g 1001 nodejs && \
+    useradd -r -u 1001 -g nodejs sales-buddy
 
 # Change ownership of app directory
 RUN chown -R sales-buddy:nodejs /app
