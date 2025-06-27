@@ -7,6 +7,8 @@
   "scripts": {
     "build": "npm run build:ts && npm run build:assets",
     "build:ts": "tsc",
+    "build:ci": "npm run build:ts:ci && npm run build:assets",
+    "build:ts:ci": "tsc --project tsconfig.ci.json",
     "build:assets": "npm run build:css && npm run build:js",
     "build:css": "postcss public/styles.css -o public/dist/styles.min.css",
     "build:js": "terser public/app.js -o public/dist/app.min.js --compress --mangle",
@@ -17,7 +19,8 @@
     "dev": "concurrently \"tsc --watch\" \"nodemon dist/index.js\" \"npm run watch:css\"",
     "watch:css": "postcss public/styles.css -o public/dist/styles.css --watch",
     "dev:ts": "tsx watch src/index.ts",
-    "test": "npm run build && node --require dotenv/config dist/tests/test-basic.js",
+    "test": "npm run build:ci && node --require dotenv/config dist/tests/test-basic.js",
+    "test:local": "npm run build && node --require dotenv/config dist/tests/test-basic.js",
     "test:dev": "node --import tsx --require dotenv/config tests/test-basic.ts",
     "test:watch": "node --loader tsx --watch tests/test-basic.ts",
     "health": "curl -f http://localhost:3000/api/health || exit 1",
