@@ -34,10 +34,26 @@ echo "📋 GitHub Repository: $GITHUB_REPO"
 if ! command -v koyeb &> /dev/null; then
     echo "📦 Installing Koyeb CLI..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        brew install koyeb/tap/koyeb
+        # macOS installation using Homebrew
+        if command -v brew &> /dev/null; then
+            brew install koyeb/tap/koyeb
+        else
+            echo "❌ Homebrew not found. Installing using shell script..."
+            curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+            export PATH=$HOME/.koyeb/bin:$PATH
+        fi
     else
-        echo "Please install Koyeb CLI: https://github.com/koyeb/koyeb-cli"
-        exit 1
+        # Linux/other systems installation using shell script
+        echo "🐧 Installing Koyeb CLI for Linux..."
+        curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+        export PATH=$HOME/.koyeb/bin:$PATH
+        
+        # Verify installation
+        if ! command -v koyeb &> /dev/null; then
+            echo "❌ Koyeb CLI installation failed. Please install manually:"
+            echo "   Visit: https://www.koyeb.com/docs/build-and-deploy/cli/installation"
+            exit 1
+        fi
     fi
 fi
 
