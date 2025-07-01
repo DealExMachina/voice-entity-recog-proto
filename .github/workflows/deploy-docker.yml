@@ -64,18 +64,21 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         IMAGE_URL: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
       run: |
-        # Install Koyeb CLI
-        curl -fsSL https://app.koyeb.com/download/cli/install.sh | bash
+        # Install Koyeb CLI using direct binary download
+        curl -fsSL -o koyeb.tar.gz "https://github.com/koyeb/koyeb-cli/releases/latest/download/koyeb_linux_amd64.tar.gz"
+        tar -xzf koyeb.tar.gz
+        sudo mv koyeb /usr/local/bin/koyeb
+        chmod +x /usr/local/bin/koyeb
         
         # Configure Koyeb CLI
-        echo "$KOYEB_TOKEN" | ~/.koyeb/koyeb auth login --token
+        echo "$KOYEB_TOKEN" | koyeb auth login --token
         
         # Check if service exists
-        SERVICE_EXISTS=$(~/.koyeb/koyeb services list --app sales-buddy --output json | jq -r '.services[] | select(.name == "web") | .id' 2>/dev/null || echo "")
+        SERVICE_EXISTS=$(koyeb services list --app sales-buddy --output json | jq -r '.services[] | select(.name == "web") | .id' 2>/dev/null || echo "")
         
         if [ -n "$SERVICE_EXISTS" ]; then
           echo "🔄 Updating existing service..."
-          ~/.koyeb/koyeb services update web \
+          koyeb services update web \
             --app sales-buddy \
             --docker $IMAGE_URL \
             --env NODE_ENV=production \
@@ -93,7 +96,7 @@ jobs:
             --scale 1
         else
           echo "🆕 Creating new service..."
-          ~/.koyeb/koyeb services create web \
+          koyeb services create web \
             --app sales-buddy \
             --docker $IMAGE_URL \
             --env NODE_ENV=production \
@@ -116,7 +119,7 @@ jobs:
         sleep 30
         
         # Check service status
-        ~/.koyeb/koyeb services list --app sales-buddy
+        koyeb services list --app sales-buddy
 
     - name: Report deployment status
       run: |
