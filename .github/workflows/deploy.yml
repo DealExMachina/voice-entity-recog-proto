@@ -5,6 +5,7 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
 
 env:
   NODE_ENV: production
@@ -20,11 +21,14 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '22'
         cache: 'npm'
 
     - name: Install dependencies
       run: npm ci
+
+    - name: Run build
+      run: npm run build:ci
 
     - name: Run tests with demo mode
       run: npm test
@@ -35,32 +39,75 @@ jobs:
   deploy-staging:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: staging
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Deploy to Koyeb Staging
+    - name: Deploy to Koyeb Staging (Git-based)
+      env:
+        KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN_STAGING }}
       run: |
-        echo "🚀 Deploying to staging environment..."
-        echo "📋 Repository: ${{ github.repository }}"
-        echo "🌐 Branch: ${{ github.ref_name }}"
-        echo ""
-        echo "🔐 Environment Variables (staging):"
-        echo "   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_STAGING && 'SET' || 'NOT SET' }}"
-        echo "   MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY_STAGING && 'SET' || 'NOT SET' }}"
-        echo "   AI_PROVIDER: ${{ vars.STAGING_AI_PROVIDER || 'demo' }}"
-        echo "   RATE_LIMIT_ENABLED: ${{ vars.STAGING_RATE_LIMIT_ENABLED || 'true' }}"
-        echo ""
-        echo "✅ Staging deployment configured!"
-        echo "🎯 Next: Configure Koyeb staging service with these environment variables"
+        if [ -z "$KOYEB_TOKEN" ]; then
+          echo "⚠️  KOYEB_TOKEN_STAGING not set - skipping deployment"
+          echo "📋 Configure staging deployment:"
+          echo "   1. Add KOYEB_TOKEN_STAGING to repository secrets"
+          echo "   2. Deploy manually via Koyeb dashboard:"
+          echo "      • Repository: ${{ github.repository }}"
+          echo "      • Branch: ${{ github.ref_name }}"
+          echo "      • Build: npm ci && npm run build:production"
+          echo "      • Run: npm start"
+          echo "      • Port: 3000"
+          echo "      • Environment: AI_PROVIDER=demo"
+          exit 0
+        fi
+        
+        # Install Koyeb CLI
+        curl -fsSL -o koyeb.tar.gz "https://github.com/koyeb/koyeb-cli/releases/latest/download/koyeb_linux_amd64.tar.gz"
+        tar -xzf koyeb.tar.gz
+        sudo mv koyeb /usr/local/bin/koyeb
+        chmod +x /usr/local/bin/koyeb
+        
+        # Login and deploy
+        echo "$KOYEB_TOKEN" | koyeb auth login --token
+        
+        APP_NAME="voice-entity-staging"
+        
+        # Create app if needed
+        if ! koyeb apps list --output json | jq -e ".apps[] | select(.name == \"$APP_NAME\")" > /dev/null 2>&1; then
+          koyeb apps create $APP_NAME
+        fi
+        
+        # Deploy with Git
+        koyeb services create web \
+          --app $APP_NAME \
+          --git github.com/${{ github.repository }} \
+          --git-branch ${{ github.ref_name }} \
+          --git-build-command "npm ci && npm run build:production" \
+          --git-run-command "npm start" \
+          --env NODE_ENV=production \
+          --env PORT=3000 \
+          --env AI_PROVIDER=demo \
+          --env DB_PATH=/tmp/entities.db \
+          --env RATE_LIMIT_ENABLED=true \
+          --ports 3000:http \
+          --health-checks 3000:http:/api/health \
+          --instance-type nano \
+          --regions fra \
+          --scale 1 \
+          --skip-cache || \
+        koyeb services update web \
+          --app $APP_NAME \
+          --git github.com/${{ github.repository }} \
+          --git-branch ${{ github.ref_name }} \
+          --env AI_PROVIDER=demo
 
   deploy-production:
     needs: [test, deploy-staging]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production
     
     steps:
@@ -68,43 +115,72 @@ jobs:
       uses: actions/checkout@v4
     
     - name: Deploy to Koyeb Production
+      env:
+        KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       run: |
-        echo "🚀 Deploying to production environment..."
-        echo "📋 Repository: ${{ github.repository }}"
-        echo "🌐 Branch: ${{ github.ref_name }}"
-        echo ""
-        echo "🔐 Environment Variables (production):"
-        echo "   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_PROD && 'SET' || 'NOT SET' }}"
-        echo "   MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY_PROD && 'SET' || 'NOT SET' }}"
-        echo "   AI_PROVIDER: ${{ vars.PROD_AI_PROVIDER || 'openai' }}"
-        echo "   RATE_LIMIT_ENABLED: ${{ vars.PROD_RATE_LIMIT_ENABLED || 'true' }}"
-        echo "   RATE_LIMIT_MAX_REQUESTS: ${{ vars.PROD_RATE_LIMIT_MAX_REQUESTS || '200' }}"
-        echo ""
-        echo "✅ Production deployment configured!"
-        echo "🎯 Next: Configure Koyeb production service with these environment variables"
-    
-    - name: Deployment Instructions
-      run: |
-        echo ""
-        echo "📚 Complete the deployment using one of these methods:"
-        echo ""
-        echo "🎛️  Method 1: Koyeb Dashboard (Recommended)"
-        echo "   1. Go to https://app.koyeb.com"
-        echo "   2. Connect GitHub repository: ${{ github.repository }}"
-        echo "   3. Set environment variables from the list above"
-        echo "   4. Deploy to fra (Frankfurt) region"
-        echo ""
-        echo "💻 Method 2: Koyeb CLI"
-        echo "   koyeb service create mastra-voice-production \\"
-        echo "     --git github.com/${{ github.repository }} \\"
-        echo "     --git-branch ${{ github.ref_name }} \\"
-        echo "     --env OPENAI_API_KEY=\$OPENAI_API_KEY \\"
-        echo "     --env MISTRAL_API_KEY=\$MISTRAL_API_KEY \\"
-        echo "     --env AI_PROVIDER=openai \\"
-        echo "     --env NODE_ENV=production \\"
-        echo "     --env RATE_LIMIT_ENABLED=true \\"
-        echo "     --regions fra"
-        echo ""
-        echo "🔍 Verify deployment with:"
-        echo "   curl https://your-app.koyeb.app/api/health"
-        echo "   curl https://your-app.koyeb.app/api/ai/status" 
+        if [ -z "$KOYEB_TOKEN" ]; then
+          echo "⚠️  KOYEB_TOKEN not set - providing manual deployment instructions"
+          echo ""
+          echo "📚 Manual deployment via Koyeb Dashboard:"
+          echo "   1. Go to https://app.koyeb.com"
+          echo "   2. Connect GitHub repository: ${{ github.repository }}"
+          echo "   3. Configure service:"
+          echo "      • Build: npm ci && npm run build:production"
+          echo "      • Run: npm start"
+          echo "      • Port: 3000"
+          echo "      • Region: fra (Frankfurt)"
+          echo "   4. Set environment variables:"
+          echo "      • NODE_ENV=production"
+          echo "      • AI_PROVIDER=openai"
+          echo "      • OPENAI_API_KEY=[your key]"
+          echo "      • RATE_LIMIT_ENABLED=true"
+          echo "      • DB_PATH=/tmp/entities.db"
+          echo ""
+          echo "💻 Alternative: Use Koyeb CLI"
+          echo "   export KOYEB_TOKEN=your_token"
+          echo "   ./deploy-demo.sh"
+          exit 0
+        fi
+        
+        # Install Koyeb CLI
+        curl -fsSL -o koyeb.tar.gz "https://github.com/koyeb/koyeb-cli/releases/latest/download/koyeb_linux_amd64.tar.gz"
+        tar -xzf koyeb.tar.gz
+        sudo mv koyeb /usr/local/bin/koyeb
+        chmod +x /usr/local/bin/koyeb
+        
+        # Login and deploy
+        echo "$KOYEB_TOKEN" | koyeb auth login --token
+        
+        APP_NAME="voice-entity-extraction"
+        
+        # Create app if needed
+        if ! koyeb apps list --output json | jq -e ".apps[] | select(.name == \"$APP_NAME\")" > /dev/null 2>&1; then
+          koyeb apps create $APP_NAME
+        fi
+        
+        # Deploy with Git
+        koyeb services create web \
+          --app $APP_NAME \
+          --git github.com/${{ github.repository }} \
+          --git-branch ${{ github.ref_name }} \
+          --git-build-command "npm ci && npm run build:production" \
+          --git-run-command "npm start" \
+          --env NODE_ENV=production \
+          --env PORT=3000 \
+          --env AI_PROVIDER=openai \
+          --env OPENAI_API_KEY="$OPENAI_API_KEY" \
+          --env DB_PATH=/tmp/entities.db \
+          --env RATE_LIMIT_ENABLED=true \
+          --ports 3000:http \
+          --health-checks 3000:http:/api/health \
+          --instance-type nano \
+          --regions fra \
+          --scale 1 \
+          --skip-cache || \
+        koyeb services update web \
+          --app $APP_NAME \
+          --env OPENAI_API_KEY="$OPENAI_API_KEY" \
+          --env AI_PROVIDER=openai
+        
+        echo "✅ Production deployment completed!" 

@@ -1,106 +1,57 @@
-# Mastra Voice Entity Extraction
+# Sales Buddy - AI Voice Entity Extraction
 
-A sophisticated AI-powered entity extraction prototype that processes voice input, text, and audio files to identify and store entities using DuckDB via the Model Context Protocol (MCP). Features multiple AI providers, rate limiting, and a modern web interface.
+A sophisticated AI-powered entity extraction system that processes voice input, text, and audio files to identify and store entities using DuckDB via the Model Context Protocol (MCP).
 
 ## 🌟 Features
 
-### Core Functionality
 - **Multi-modal Input**: Voice recording, file upload, and direct text input
-- **AI-Powered Processing**: Entity extraction using OpenAI GPT-4o-mini or Mistral AI
+- **AI-Powered Processing**: Entity extraction using OpenAI GPT-4o-mini or Mistral AI  
 - **Real-time Communication**: WebSocket integration for live updates
 - **Database Storage**: DuckDB with optimized schema and MCP integration
-- **Modern UI**: Sophisticated glass morphism design with Tailwind CSS
-
-### AI Provider Management
-- **Multiple Providers**: OpenAI, Mistral AI, and Demo mode
-- **Dynamic Switching**: Switch between AI providers on-demand via web interface
-- **Fallback Support**: Automatic fallback to demo mode when providers unavailable
-- **Cost-Effective Models**: Uses efficient models (GPT-4o-mini, Mistral-small)
-
-### Rate Limiting & Security
-- **Intelligent Rate Limiting**: Different limits for different endpoints
-  - AI operations: 50 requests per 15 minutes
-  - File uploads: 20 requests per 15 minutes
-  - General API: 200 requests per 15 minutes
-  - Health checks: 1000 requests per 15 minutes
-- **Configurable Limits**: Environment variable configuration
-- **Error Handling**: Graceful degradation with informative error messages
-
-### Entity Types Supported
-- 👤 **Person**: People's names
-- 🏢 **Organization**: Companies, departments, teams
-- 📍 **Location**: Places, addresses, cities, countries
-- 📅 **Event**: Meetings, appointments, deadlines
-- 📦 **Product**: Items, services, features
-- 💰 **Financial**: Money amounts, budgets, costs
-- 📞 **Contact**: Email addresses, phone numbers
-- 📆 **Date**: Dates and date ranges
-- ⏰ **Time**: Times and time ranges
+- **Modern UI**: Glass morphism design with Tailwind CSS and production optimization
+- **Multiple AI Providers**: OpenAI, Mistral AI, and Demo mode with runtime switching
+- **Production Ready**: Docker containerization, CI/CD, and Koyeb deployment
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Node.js 18+
-- Optional: OpenAI API key
-- Optional: Mistral AI API key
+- Optional: OpenAI API key for full functionality
 
 ### Installation
 
-1. **Clone and setup**:
 ```bash
+# Clone and install
 git clone <repository-url>
 cd sales-buddy
 npm install
-```
 
-2. **Configure environment**:
-```bash
-# Option 1: Interactive setup (recommended)
+# Setup environment (interactive)
 ./scripts/setup-keys.sh
 
-# Option 2: Manual setup
-cp .env.example .env
-# Edit .env with your API keys
-```
-
-3. **Start the application**:
-```bash
+# Start development
 npm run dev
 ```
 
-4. **Open in browser**: http://localhost:3000
+Open http://localhost:3000
 
-## 🔧 Configuration
-
-See [Configuration Guide](docs/guides/CONFIGURATION.md) for detailed configuration options.
-
-### Quick Configuration
+### Docker Deployment
 
 ```bash
-# Demo mode (no API keys needed)
-AI_PROVIDER=demo
-RATE_LIMIT_ENABLED=false
-
-# OpenAI production setup
-OPENAI_API_KEY=sk-your-key
-AI_PROVIDER=openai
-RATE_LIMIT_ENABLED=true
-
-# Mistral cost-effective setup
-MISTRAL_API_KEY=your-key
-AI_PROVIDER=mistral
-RATE_LIMIT_ENABLED=true
+# Local Docker
+cp docker.env.example docker.env
+# Edit docker.env with your API keys
+docker-compose up
 ```
 
 ## 🎯 Usage
 
 ### Web Interface
-
-1. **AI Provider Selection**: Use the dropdown in the top-right to switch between available providers
-2. **Voice Recording**: Click the microphone button to start/stop recording
-3. **File Upload**: Upload audio files for transcription and entity extraction
+1. **AI Provider Selection**: Dropdown in top-right to switch providers
+2. **Voice Recording**: Click microphone to start/stop recording  
+3. **File Upload**: Upload audio files for transcription
 4. **Text Input**: Enter text directly for entity extraction
-5. **Real-time Results**: View extracted entities with confidence scores and context
+5. **Real-time Results**: View extracted entities with confidence scores
 
 ### API Endpoints
 
@@ -108,19 +59,15 @@ RATE_LIMIT_ENABLED=true
 # Health check
 GET /api/health
 
-# AI provider management
+# Entity extraction  
+POST /api/extract-entities {"text": "Meeting with John at Acme Corp tomorrow"}
+
+# Provider management
 GET /api/ai/status
 POST /api/ai/provider {"provider": "openai|mistral|demo"}
-GET /api/ai/providers
-
-# Entity extraction
-POST /api/extract-entities {"text": "your text"}
-POST /api/process-audio (FormData with audio file)
 
 # Database operations
 GET /api/entities?type=person&limit=50
-POST /api/entities {"type": "person", "value": "John Doe"}
-GET /api/stats
 ```
 
 ## 🏗️ Architecture
@@ -140,7 +87,7 @@ GET /api/stats
                        │                  │
                        │ • Entity Storage │
                        │ • Conversations  │
-                       │ • Relationships  │
+                       │ • Type Safety    │
                        └──────────────────┘
                                 │
                                 ▼
@@ -153,140 +100,77 @@ GET /api/stats
                        └──────────────────┘
 ```
 
-### Core Components
-
-- **MastraAgent** (`src/agents/mastra-agent.js`): Multi-provider AI processing
-- **McpService** (`src/services/mcp-service.js`): MCP-compliant database operations
-- **Rate Limiting** (`src/middleware/rateLimiter.js`): Configurable request throttling
-- **Database Layer** (`src/database/duckdb.js`): Optimized DuckDB integration
-- **Web Interface** (`public/`): Modern responsive UI with real-time updates
-
 ## 🚀 Deployment
 
-### GitHub Actions + Koyeb (Recommended)
+### Automated Deployment (Recommended)
 
-**Automated deployment with GitHub Container Registry:**
+**GitHub Actions + Koyeb:**
+1. Set repository secrets: `KOYEB_TOKEN`, `OPENAI_API_KEY`  
+2. Push to main branch → automatic deployment
+3. Production-optimized Docker build with minified assets
 
-1. **Setup Repository Secrets** (GitHub repo settings → Secrets):
-   ```
-   KOYEB_TOKEN=your-koyeb-api-token
-   OPENAI_API_KEY=sk-your-openai-key
-   ```
+### Manual Deployment Options
 
-2. **Deploy on Push**:
-   ```bash
-   git add .
-   git commit -m "Deploy to production"
-   git push origin main
-   # GitHub Actions automatically builds Docker image and deploys to Koyeb
-   ```
-
-3. **Manual Deployment**:
-   - Go to GitHub Actions tab in your repository
-   - Run "Build and Deploy to Koyeb" workflow manually
-
-**What the workflow does:**
-- ✅ Builds optimized Docker image
-- ✅ Pushes to GitHub Container Registry (ghcr.io)
-- ✅ Creates/updates Koyeb service with proper configuration
-- ✅ Sets up health checks and auto-scaling
-- ✅ Deploys to EU Frankfurt region
-
-### Alternative: Docker Compose
-
+**Koyeb CLI:**
 ```bash
-# Local/VPS deployment with Docker
-cp docker.env.example docker.env
-# Edit docker.env with your settings
-./scripts/deploy-docker.sh
+# Set environment variables
+export KOYEB_TOKEN=your-token
+export OPENAI_API_KEY=sk-your-key
+
+# Deploy demo mode (no API keys needed)
+./deploy-demo.sh
 ```
 
-### Alternative: Koyeb CLI
-
+**Local Docker:**
 ```bash
-# Direct CLI deployment
-./scripts/deploy-koyeb.sh
-```
-
-See [Deployment Documentation](docs/deployment/) for detailed deployment guides.
-
-## 📊 Development
-
-### Available Scripts
-
-```bash
-npm run dev          # Development server with hot reload
-npm run start        # Production server
-npm test             # Run tests
-npm run health       # Test health endpoint
-./scripts/setup-keys.sh     # Interactive API key setup
-./scripts/check-config.sh   # Verify configuration
-```
-
-### Development Tools
-
-- **Configuration Checker**: `./scripts/check-config.sh`
-- **API Key Setup**: `./scripts/setup-keys.sh`
-- **Health Check**: `npm run health`
-- **Live Reload**: Automatic restart on file changes
-
-## 🔒 Security Features
-
-- **Input Validation**: Comprehensive request validation
-- **Rate Limiting**: Multi-tier protection against abuse
-- **Error Handling**: Secure error responses without sensitive data
-- **CORS Protection**: Configurable cross-origin resource sharing
-- **File Upload Safety**: Type validation and size limits
-- **Environment Isolation**: Separate configurations for dev/staging/production
-
-## 🧪 Testing
-
-```bash
-# Run basic tests
-npm test
-
-# Test health endpoint
-npm run health
-
-# Test configuration
-./scripts/check-config.sh
-
-# Manual API testing
-curl -X POST http://localhost:3000/api/extract-entities \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Schedule meeting with Alice at Google tomorrow 2 PM"}'
+# Production build
+docker build -t sales-buddy .
+docker run -p 3000:3000 -e OPENAI_API_KEY=sk-your-key sales-buddy
 ```
 
 ## 📚 Documentation
 
 ### Quick Reference
-- [API Key Summary](API_KEY_SUMMARY.md) - **Start here for key management**
-
-### Security & Configuration
-- [Key Management Guide](docs/security/KEY_MANAGEMENT.md) - Detailed security practices
-- [DevOps Security](docs/security/DEVOPS_SECURITY.md) - Production deployment security
-- [Configuration Guide](docs/guides/CONFIGURATION.md) - All settings explained
-
-### Development Guides
+- [API Providers Guide](docs/guides/API_PROVIDERS.md) - AI provider configuration
+- [API Key Management](docs/security/API_KEY_MANAGEMENT.md) - Secure key handling
 - [Getting Started](docs/guides/GETTING_STARTED.md) - Development setup
-- [Project Summary](docs/guides/PROJECT_SUMMARY.md) - Technical overview
-- [API Documentation](docs/API.md) - Complete API reference
+
+### Complete Documentation
 - [Architecture Overview](docs/ARCHITECTURE.md) - System design
+- [API Documentation](docs/API.md) - Complete API reference  
+- [Configuration Guide](docs/guides/CONFIGURATION.md) - All settings
+- [Deployment Guide](docs/deployment/DEPLOYMENT.md) - Production deployment
+- [Security Guide](docs/security/DEVOPS_SECURITY.md) - Production security
 
-### Deployment Guides
-- [Deployment Guide](docs/deployment/DEPLOYMENT.md) - Complete deployment instructions
-- [Quick Deploy](docs/deployment/QUICK_DEPLOY.md) - 10-minute deployment
-- [EU Deployment](docs/deployment/DEPLOY_EU.md) - Frankfurt region deployment
+## 🧪 Testing
 
-## 🤝 Contributing
+```bash
+# Run tests
+npm test
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes
-4. Add tests if applicable
-5. Commit changes: `git commit -m 'Add amazing feature'`
-6. Push to branch: `git push origin feature/amazing-feature`
-7. Submit a pull request
+# Health check
+npm run health
+
+# Configuration validation
+./scripts/check-config.sh
+```
+
+## 🛠️ Development
+
+### Build Commands
+```bash
+npm run build              # Production build
+npm run build:production   # Production with asset optimization  
+npm run dev               # Development with hot reload
+npm run type-check        # TypeScript validation
+```
+
+### Key Technologies
+- **Backend**: TypeScript, Express.js, DuckDB, WebSocket
+- **Frontend**: Vanilla JS, Tailwind CSS (production optimized)
+- **AI**: OpenAI GPT-4o-mini, Whisper, Mistral AI
+- **Deployment**: Docker, GitHub Actions, Koyeb
+- **Database**: DuckDB with MCP protocol
 
 ## 📄 License
 
@@ -294,12 +178,7 @@ MIT License - see LICENSE file for details
 
 ## 🆘 Support
 
-For issues and questions:
-1. Check the [documentation](docs/) first
-2. Review existing GitHub issues
-3. Create a new issue with detailed information
-4. Use the configuration checker: `./scripts/check-config.sh`
-
----
-
-**Built with** ❤️ **for the Mastra community** 
+- **Configuration Issues**: `./scripts/check-config.sh`
+- **API Problems**: Check [API Providers Guide](docs/guides/API_PROVIDERS.md)
+- **Deployment Issues**: See [Deployment Guide](docs/deployment/DEPLOYMENT.md)
+- **Security Concerns**: Review [Security Guide](docs/security/DEVOPS_SECURITY.md) 
