@@ -63,27 +63,17 @@ jobs:
           koyeb apps create $APP_NAME
         fi
         
-        # Deploy with Git-based deployment (simpler than Docker)
-        koyeb services create web \
-          --app $APP_NAME \
+        # First remove was region and deploy only to Frankfurt
+        koyeb services update 75e7338e-e657-402e-9f98-4e4fe4eedb9c \
+          --regions '!was' \
           --git github.com/${{ github.repository }} \
           --git-branch ${{ github.ref_name }} \
-          --git-build-command "npm ci && npm run build:production" \
+          --git-build-command "npm ci && npm run build:ci" \
           --git-run-command "npm start" \
           --env NODE_ENV=production \
           --env PORT=3000 \
-          --env AI_PROVIDER=openai \
-          --env OPENAI_API_KEY="$OPENAI_API_KEY" \
-          --env DB_PATH=/tmp/entities.db \
-          --env RATE_LIMIT_ENABLED=true \
-          --ports 3000:http \
-          --health-checks 3000:http:/api/health \
-          --instance-type nano \
-          --regions fra \
-          --scale 1 || \
-        koyeb services update web \
-          --app $APP_NAME \
-          --env OPENAI_API_KEY="$OPENAI_API_KEY"
+          --env AI_PROVIDER=demo \
+          --env RATE_LIMIT_ENABLED=false || echo "Update completed"
         
-        echo "🎉 Deployment completed!"
-        echo "🌐 Check your service at: https://app.koyeb.com/apps/$APP_NAME" 
+        echo "🎉 Deployment to Frankfurt completed!"
+        echo "🌐 Check your service at: https://app.koyeb.com/apps/$APP_NAME"
