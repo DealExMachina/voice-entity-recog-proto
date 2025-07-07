@@ -1,4 +1,4 @@
-name: Build and Deploy to Koyeb
+name: Deploy to Koyeb
 
 on:
   push:
@@ -6,37 +6,14 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  APP_NAME: sales-buddy
 
 jobs:
-  build-and-deploy:
+  test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=sha,prefix=sha-
-          type=raw,value=latest,enable={{is_default_branch}}
 
     - name: Set up Node.js
       uses: actions/setup-node@v4
@@ -47,140 +24,66 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    - name: Run tests with CI configuration
+    - name: Run tests
       run: npm test
       env:
         AI_PROVIDER: demo
         RATE_LIMIT_ENABLED: false
 
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
     - name: Deploy to Koyeb
       env:
         KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN }}
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        IMAGE_URL: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
       run: |
-<<<<<<< Updated upstream
-        # Install Koyeb CLI using official install script
-        curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
-        export PATH=$HOME/.koyeb/bin:$PATH
-=======
-        # Validate required secrets
         if [ -z "$KOYEB_TOKEN" ]; then
-          echo "❌ ERROR: KOYEB_TOKEN secret not set"
-          echo "📋 Add KOYEB_TOKEN to repository secrets"
-          exit 1
+          echo "⚠️  KOYEB_TOKEN not set - skipping deployment"
+          exit 0
         fi
         
-        # Install Koyeb CLI using direct binary download
-        echo "🔧 Installing Koyeb CLI..."
+        # Install Koyeb CLI
         curl -fsSL -o koyeb.tar.gz "https://github.com/koyeb/koyeb-cli/releases/latest/download/koyeb_linux_amd64.tar.gz"
         tar -xzf koyeb.tar.gz
         sudo mv koyeb /usr/local/bin/koyeb
         chmod +x /usr/local/bin/koyeb
->>>>>>> Stashed changes
         
-        # Test CLI installation
-        koyeb version
-        
-        # Configure Koyeb CLI
-<<<<<<< Updated upstream
-        echo "$KOYEB_TOKEN" | $HOME/.koyeb/bin/koyeb auth login --token
-=======
-        echo "🔐 Authenticating with Koyeb..."
+        # Login and deploy
         echo "$KOYEB_TOKEN" | koyeb auth login --token
->>>>>>> Stashed changes
         
-        # Create app if it doesn't exist
-        APP_NAME="voice-entity-extraction"
+        # Create app if needed
         if ! koyeb apps list --output json | jq -e ".apps[] | select(.name == \"$APP_NAME\")" > /dev/null 2>&1; then
-          echo "🆕 Creating Koyeb app: $APP_NAME"
           koyeb apps create $APP_NAME
         fi
         
-        # Check if service exists
-<<<<<<< Updated upstream
-        SERVICE_EXISTS=$($HOME/.koyeb/bin/koyeb services list --app sales-buddy --output json | jq -r '.services[] | select(.name == "web") | .id' 2>/dev/null || echo "")
+        # Deploy with Git-based deployment (simpler than Docker)
+        koyeb services create web \
+          --app $APP_NAME \
+          --git github.com/${{ github.repository }} \
+          --git-branch ${{ github.ref_name }} \
+          --git-build-command "npm ci && npm run build:production" \
+          --git-run-command "npm start" \
+          --env NODE_ENV=production \
+          --env PORT=3000 \
+          --env AI_PROVIDER=openai \
+          --env OPENAI_API_KEY="$OPENAI_API_KEY" \
+          --env DB_PATH=/tmp/entities.db \
+          --env RATE_LIMIT_ENABLED=true \
+          --ports 3000:http \
+          --health-checks 3000:http:/api/health \
+          --instance-type nano \
+          --regions fra \
+          --scale 1 || \
+        koyeb services update web \
+          --app $APP_NAME \
+          --env OPENAI_API_KEY="$OPENAI_API_KEY"
         
-        if [ -n "$SERVICE_EXISTS" ]; then
-          echo "🔄 Updating existing service..."
-          $HOME/.koyeb/bin/koyeb services update web \
-            --app sales-buddy \
-=======
-        SERVICE_EXISTS=$(koyeb services list --app $APP_NAME --output json | jq -r '.services[] | select(.name == "web") | .id' 2>/dev/null || echo "")
-        
-        if [ -n "$SERVICE_EXISTS" ]; then
-          echo "🔄 Updating existing service..."
-          koyeb services update web \
-            --app $APP_NAME \
->>>>>>> Stashed changes
-            --docker $IMAGE_URL \
-            --env NODE_ENV=production \
-            --env PORT=3000 \
-            --env DB_PATH=/tmp/entities.db \
-            --env AI_PROVIDER=${AI_PROVIDER:-openai} \
-            --env OPENAI_API_KEY="$OPENAI_API_KEY" \
-            --env RATE_LIMIT_ENABLED=true \
-            --env RATE_LIMIT_WINDOW_MINUTES=15 \
-            --env RATE_LIMIT_MAX_REQUESTS=100 \
-            --ports 3000:http \
-            --health-checks 3000:http:/api/health \
-            --instance-type nano \
-            --regions fra \
-            --scale 1
-        else
-          echo "🆕 Creating new service..."
-<<<<<<< Updated upstream
-          $HOME/.koyeb/bin/koyeb services create web \
-            --app sales-buddy \
-=======
-          koyeb services create web \
-            --app $APP_NAME \
->>>>>>> Stashed changes
-            --docker $IMAGE_URL \
-            --env NODE_ENV=production \
-            --env PORT=3000 \
-            --env DB_PATH=/tmp/entities.db \
-            --env AI_PROVIDER=${AI_PROVIDER:-openai} \
-            --env OPENAI_API_KEY="$OPENAI_API_KEY" \
-            --env RATE_LIMIT_ENABLED=true \
-            --env RATE_LIMIT_WINDOW_MINUTES=15 \
-            --env RATE_LIMIT_MAX_REQUESTS=100 \
-            --ports 3000:http \
-            --health-checks 3000:http:/api/health \
-            --instance-type nano \
-            --regions fra \
-            --scale 1
-        fi
-        
-        # Wait for deployment
-        echo "⏳ Waiting for deployment to complete..."
-        sleep 60
-        
-        # Check service status
-<<<<<<< Updated upstream
-        $HOME/.koyeb/bin/koyeb services list --app sales-buddy
-=======
-        echo "📊 Checking service status..."
-        koyeb services get web --app $APP_NAME
-        
-        # Get service URL
-        SERVICE_URL=$(koyeb services get web --app $APP_NAME --output json | jq -r '.urls[0]' 2>/dev/null || echo "")
-        if [ -n "$SERVICE_URL" ] && [ "$SERVICE_URL" != "null" ]; then
-          echo "🌐 Service URL: $SERVICE_URL"
-          echo "🔍 Health check: $SERVICE_URL/api/health"
-        fi
->>>>>>> Stashed changes
-
-    - name: Report deployment status
-      run: |
         echo "🎉 Deployment completed!"
-        echo "📦 Docker image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-        echo "🌐 Check your service at: https://app.koyeb.com/apps/voice-entity-extraction" 
+        echo "🌐 Check your service at: https://app.koyeb.com/apps/$APP_NAME" 
