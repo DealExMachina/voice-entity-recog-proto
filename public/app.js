@@ -254,52 +254,52 @@ class MastraVoiceApp {
 
     setupAudioFeedback(stream) {
         try {
-            // Create audio context for real-time analysis
+            // Create audio context for simple voice detection
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             this.analyser = this.audioContext.createAnalyser();
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             
-            // Configure analyser for responsive feedback
-            this.analyser.fftSize = 256;
-            this.analyser.smoothingTimeConstant = 0.3;
+            // Configure analyser for simple voice detection
+            this.analyser.fftSize = 128;
+            this.analyser.smoothingTimeConstant = 0.8;
             
-            // Connect microphone to analyser
+            // Connect microphone to analyser (no audio output)
             this.microphone.connect(this.analyser);
             
-            // Set up data array for frequency analysis
+            // Set up data array for voice detection
             this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
-            // Start real-time audio level monitoring
-            this.startAudioLevelMonitoring();
+            // Start simple voice detection
+            this.startVoiceDetection();
             
-            console.log('🎵 Audio feedback system initialized');
+            console.log('🎵 Simple voice detection initialized');
         } catch (error) {
-            console.warn('⚠️ Audio feedback not available:', error);
-            // Continue without audio feedback if not supported
+            console.warn('⚠️ Voice detection not available:', error);
+            // Continue without voice detection if not supported
         }
     }
 
-    startAudioLevelMonitoring() {
+    startVoiceDetection() {
         if (!this.analyser || !this.isRecording) return;
         
         // Get frequency data
         this.analyser.getByteFrequencyData(this.dataArray);
         
-        // Calculate average volume level
+        // Simple voice detection - check if there's significant audio
         const sum = this.dataArray.reduce((a, b) => a + b, 0);
         const average = sum / this.dataArray.length;
-        const volumeLevel = Math.min(100, (average / 128) * 100);
+        const isSpeaking = average > 15; // Simple threshold for voice detection
         
-        // Update visual feedback
-        this.updateAudioLevelDisplay(volumeLevel);
+        // Update simple visual indicator
+        this.updateVoiceIndicator(isSpeaking);
         
         // Continue monitoring if still recording
         if (this.isRecording) {
-            this.audioLevelAnimationFrame = requestAnimationFrame(() => this.startAudioLevelMonitoring());
+            this.audioLevelAnimationFrame = requestAnimationFrame(() => this.startVoiceDetection());
         }
     }
 
-    updateAudioLevelDisplay(level) {
+    updateVoiceIndicator(isSpeaking) {
         const recordingStatus = document.getElementById('recordingStatus');
         if (!recordingStatus || !this.isRecording) return;
         
@@ -308,34 +308,20 @@ class MastraVoiceApp {
         const seconds = elapsed % 60;
         const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
         
-        // Calculate number of active bars based on volume level
-        const maxBars = 10;
-        const activeBars = Math.ceil((level / 100) * maxBars);
+        // Simple pulsing indicator
+        const voiceIndicator = isSpeaking ? 
+            '<div class="w-3 h-3 rounded-full bg-green-400 animate-pulse"></div>' :
+            '<div class="w-3 h-3 rounded-full bg-red-400"></div>';
         
-        // Generate volume bars
-        const volumeBars = Array.from({length: maxBars}, (_, i) => {
-            const isActive = i < activeBars;
-            const barColor = i < 3 ? 'bg-green-400' : i < 7 ? 'bg-yellow-400' : 'bg-red-400';
-            const opacity = isActive ? 'opacity-100' : 'opacity-20';
-            return `<div class="w-1 h-4 ${barColor} ${opacity} rounded-sm transition-opacity duration-75"></div>`;
-        }).join('');
+        const statusText = isSpeaking ? 'Recording - Voice detected' : 'Recording - Speak now';
         
         recordingStatus.innerHTML = `
-            <div class="flex flex-col items-center space-y-2 p-3">
-                <div class="flex items-center space-x-3">
-                    <div class="w-3 h-3 rounded-full recording-indicator"></div>
-                    <span class="text-red-600 font-medium">Recording: ${timeStr}</span>
-                </div>
-                <div class="flex items-center space-x-4">
-                    <span class="text-xs text-slate-500">Voice Level:</span>
-                    <div class="flex items-end space-x-0.5 bg-slate-100 p-1 rounded">
-                        ${volumeBars}
-                    </div>
-                    <span class="text-xs text-slate-500">${Math.round(level)}%</span>
-                </div>
-                <div class="text-xs text-slate-400">
-                    ${this.audioChunks.length} chunks • ${Math.round(this.audioChunks.reduce((sum, chunk) => sum + chunk.size, 0) / 1024)}KB
-                </div>
+            <div class="flex items-center space-x-3 p-3">
+                ${voiceIndicator}
+                <span class="text-red-600 font-medium">${statusText}: ${timeStr}</span>
+                <span class="text-slate-400 text-xs">
+                    ${Math.round(this.audioChunks.reduce((sum, chunk) => sum + chunk.size, 0) / 1024)}KB
+                </span>
             </div>
         `;
     }
