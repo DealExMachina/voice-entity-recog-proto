@@ -81,43 +81,21 @@ jobs:
         fi
 
         curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
-        export PATH=$HOME/.koyeb/bin:$PATH
+        echo "$HOME/.koyeb/bin" >> $GITHUB_PATH
 
-        echo "$KOYEB_TOKEN" | koyeb auth login --token
+        koyeb auth login --token ${{ secrets.KOYEB_TOKEN }}
 
-        if ! koyeb apps get ${{ env.APP_NAME }} >/dev/null 2>&1; then
-          echo "Creating app ${{ env.APP_NAME }}"
-          koyeb apps create ${{ env.APP_NAME }}
-        fi
-
-        SERVICE_NAME="webapp"
-        if koyeb services get $SERVICE_NAME --app ${{ env.APP_NAME }} >/dev/null 2>&1; then
-          echo "Updating service $SERVICE_NAME"
-          koyeb services update $SERVICE_NAME --app ${{ env.APP_NAME }} \
-            --docker "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main" \
-            --docker-private-registry-secret "GitHub-registry" \
-            --ports "3000:http" \
-            --regions "fra" \
-            --instance-type "nano" \
-            --health-checks "http(path=/api/health,port=3000)" \
-            --env "NODE_ENV=production" \
-            --env "PORT=3000" \
-            --env "AI_PROVIDER=openai" \
-            --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}"
-        else
-          echo "Creating service $SERVICE_NAME"
-          koyeb services create $SERVICE_NAME --app ${{ env.APP_NAME }} \
-            --docker "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main" \
-            --docker-private-registry-secret "GitHub-registry" \
-            --ports "3000:http" \
-            --regions "fra" \
-            --instance-type "nano" \
-            --health-checks "http(path=/api/health,port=3000)" \
-            --env "NODE_ENV=production" \
-            --env "PORT=3000" \
-            --env "AI_PROVIDER=openai" \
-            --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}"
-        fi
+        koyeb services update sales-buddy/webapp --app sales-buddy --upsert \
+          --docker "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main" \
+          --docker-private-registry-secret "GitHub-registry" \
+          --ports "3000:http" \
+          --regions "fra" \
+          --instance-type "nano" \
+          --health-checks "http(path=/api/health,port=3000)" \
+          --env "NODE_ENV=production" \
+          --env "PORT=3000" \
+          --env "AI_PROVIDER=openai" \
+          --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}"
         
-        echo "🎉 Docker deployment triggered for ${{ env.APP_NAME }}/$SERVICE_NAME!"
-        echo "🌐 Check your service at: https://app.koyeb.com/apps/${{ env.APP_NAME }}" 
+        echo "🎉 Docker deployment triggered for sales-buddy/webapp!"
+        echo "🌐 Check your service at: https://app.koyeb.com/apps/sales-buddy" 
