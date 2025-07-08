@@ -168,6 +168,9 @@ class MastraVoiceApp {
                 settings: stream.getAudioTracks()[0]?.getSettings()
             });
             
+            // Set up real-time audio feedback
+            this.setupAudioFeedback(stream);
+            
             // Update UI to show we're setting up recording
             this.showProcessingState('⚙️ Optimizing audio settings...', 'preparing');
             this.updateRecordingUI('preparing');
@@ -217,6 +220,7 @@ class MastraVoiceApp {
             
             this.mediaRecorder.onstop = () => {
                 console.log('🛑 Recording stopped, processing...');
+                this.stopAudioFeedback();
                 this.processRecording();
                 stream.getTracks().forEach(track => track.stop());
             };
@@ -224,6 +228,7 @@ class MastraVoiceApp {
             this.mediaRecorder.onerror = (event) => {
                 console.error('🚨 MediaRecorder error:', event);
                 this.showToast('Recording error occurred', 'error');
+                this.stopAudioFeedback();
                 this.hideProcessingState();
             };
             
@@ -247,12 +252,130 @@ class MastraVoiceApp {
         }
     }
 
+    setupAudioFeedback(stream) {
+        try {
+            // Create audio context for real-time analysis
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            this.analyser = this.audioContext.createAnalyser();
+            this.microphone = this.audioContext.createMediaStreamSource(stream);
+            
+            // Configure analyser for responsive feedback
+            this.analyser.fftSize = 256;
+            this.analyser.smoothingTimeConstant = 0.3;
+            
+            // Connect microphone to analyser
+            this.microphone.connect(this.analyser);
+            
+            // Set up data array for frequency analysis
+            this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+            
+            // Start real-time audio level monitoring
+            this.startAudioLevelMonitoring();
+            
+            console.log('🎵 Audio feedback system initialized');
+        } catch (error) {
+            console.warn('⚠️ Audio feedback not available:', error);
+            // Continue without audio feedback if not supported
+        }
+    }
+
+    startAudioLevelMonitoring() {
+        if (!this.analyser || !this.isRecording) return;
+        
+        // Get frequency data
+        this.analyser.getByteFrequencyData(this.dataArray);
+        
+        // Calculate average volume level
+        const sum = this.dataArray.reduce((a, b) => a + b, 0);
+        const average = sum / this.dataArray.length;
+        const volumeLevel = Math.min(100, (average / 128) * 100);
+        
+        // Update visual feedback
+        this.updateAudioLevelDisplay(volumeLevel);
+        
+        // Continue monitoring if still recording
+        if (this.isRecording) {
+            this.audioLevelAnimationFrame = requestAnimationFrame(() => this.startAudioLevelMonitoring());
+        }
+    }
+
+    updateAudioLevelDisplay(level) {
+        const recordingStatus = document.getElementById('recordingStatus');
+        if (!recordingStatus || !this.isRecording) return;
+        
+        const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = elapsed % 60;
+        const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Calculate number of active bars based on volume level
+        const maxBars = 10;
+        const activeBars = Math.ceil((level / 100) * maxBars);
+        
+        // Generate volume bars
+        const volumeBars = Array.from({length: maxBars}, (_, i) => {
+            const isActive = i < activeBars;
+            const barColor = i < 3 ? 'bg-green-400' : i < 7 ? 'bg-yellow-400' : 'bg-red-400';
+            const opacity = isActive ? 'opacity-100' : 'opacity-20';
+            return `<div class="w-1 h-4 ${barColor} ${opacity} rounded-sm transition-opacity duration-75"></div>`;
+        }).join('');
+        
+        recordingStatus.innerHTML = `
+            <div class="flex flex-col items-center space-y-2 p-3">
+                <div class="flex items-center space-x-3">
+                    <div class="w-3 h-3 rounded-full recording-indicator"></div>
+                    <span class="text-red-600 font-medium">Recording: ${timeStr}</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-xs text-slate-500">Voice Level:</span>
+                    <div class="flex items-end space-x-0.5 bg-slate-100 p-1 rounded">
+                        ${volumeBars}
+                    </div>
+                    <span class="text-xs text-slate-500">${Math.round(level)}%</span>
+                </div>
+                <div class="text-xs text-slate-400">
+                    ${this.audioChunks.length} chunks • ${Math.round(this.audioChunks.reduce((sum, chunk) => sum + chunk.size, 0) / 1024)}KB
+                </div>
+            </div>
+        `;
+    }
+
+    stopAudioFeedback() {
+        // Stop audio level monitoring
+        if (this.audioLevelAnimationFrame) {
+            cancelAnimationFrame(this.audioLevelAnimationFrame);
+            this.audioLevelAnimationFrame = null;
+        }
+        
+        // Clean up audio context
+        if (this.microphone) {
+            this.microphone.disconnect();
+            this.microphone = null;
+        }
+        
+        if (this.audioContext) {
+            this.audioContext.close();
+            this.audioContext = null;
+        }
+        
+        this.analyser = null;
+        this.dataArray = null;
+        
+        console.log('🎵 Audio feedback system stopped');
+    }
+
     updateChunkProgress() {
+        // Only update if not using real-time audio feedback
+        if (this.audioContext && this.isRecording) {
+            // Audio level display is handling the UI updates
+            return;
+        }
+        
         const chunkCount = this.audioChunks.length;
         const totalSize = this.audioChunks.reduce((sum, chunk) => sum + chunk.size, 0);
         const sizeKB = Math.round(totalSize / 1024);
         
-        // Update recording status with chunk info
+        // Update recording status with chunk info (fallback when no audio feedback)
         if (this.isRecording) {
             const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
             const minutes = Math.floor(elapsed / 60);
@@ -356,6 +479,9 @@ class MastraVoiceApp {
             this.mediaRecorder.stop();
             this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
             this.isRecording = false;
+            
+            // Clean up audio feedback
+            this.stopAudioFeedback();
             
             // Clear timer
             if (this.recordingTimer) {
