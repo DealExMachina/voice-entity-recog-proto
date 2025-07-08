@@ -50,8 +50,8 @@ app.use(express.static(path.join(__dirname, '../public'), {
   index: false // Disable automatic index.html serving
 }));
 
-// Direct health endpoint for Koyeb (BEFORE rate limiting)
-app.get('/health', (req: Request, res: Response): void => {
+// Direct health endpoint for Koyeb (with health-specific rate limiting that skips for health checks)
+app.get('/health', healthLimiter, (req: Request, res: Response): void => {
   // Check if server is completely ready (set only after server.listen() completes)
   if (!serverReady) {
     // Server not completely ready yet - return 503 Service Unavailable
