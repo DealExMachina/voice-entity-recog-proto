@@ -21,6 +21,10 @@ COPY . .
 # Build the application and production assets (force cache break 2025-07-08)
 RUN npm run build:production
 
+# DEBUG: Show what files were actually created
+RUN echo "=== DEBUG: Contents of /app/dist ===" && ls -la /app/dist/ || echo "dist directory does not exist"
+RUN echo "=== DEBUG: Full directory tree ===" && find /app -name "*.js" -type f | head -20
+
 # Production stage - use standard Linux instead of Alpine for DuckDB compatibility
 FROM node:22-slim AS production
 
