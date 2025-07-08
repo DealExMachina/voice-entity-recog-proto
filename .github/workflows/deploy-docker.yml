@@ -73,7 +73,6 @@ jobs:
       if: github.ref == 'refs/heads/main'
       env:
         KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN }}
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       run: |
         if [ -z "$KOYEB_TOKEN" ]; then
           echo "⚠️ KOYEB_TOKEN not set - skipping deployment"
@@ -83,10 +82,29 @@ jobs:
         curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
         export PATH="$HOME/.koyeb/bin:$PATH"
 
-        $HOME/.koyeb/bin/koyeb login --token ${{ secrets.KOYEB_TOKEN }}
+        # Create Koyeb config file for non-interactive environment
+        mkdir -p $HOME/.koyeb
+        cat > $HOME/.koyeb.yaml << EOF
+        api:
+          url: https://app.koyeb.com
+          token: ${{ secrets.KOYEB_TOKEN }}
+        EOF
 
+        # Verify Koyeb CLI is working
+        echo "🔍 Testing Koyeb CLI authentication..."
+        $HOME/.koyeb/bin/koyeb apps list || {
+          echo "❌ Koyeb authentication failed"
+          exit 1
+        }
+
+        # Extract the main tag from the built image
+        DOCKER_IMAGE=$(echo '${{ steps.meta.outputs.tags }}' | grep ':main' || echo '${{ steps.meta.outputs.tags }}' | head -n1)
+        echo "🐳 Using Docker image: $DOCKER_IMAGE"
+        
+        # Deploy to Koyeb with error handling
+        echo "🚀 Deploying to Koyeb..."
         $HOME/.koyeb/bin/koyeb services update sales-buddy/webapp --app sales-buddy --upsert \
-          --docker "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main" \
+          --docker "$DOCKER_IMAGE" \
           --docker-private-registry-secret "GitHub-registry" \
           --ports "3000:http" \
           --regions "fra" \
@@ -97,7 +115,22 @@ jobs:
           --env "PORT=3000" \
           --env "AI_PROVIDER=openai" \
           --env "RATE_LIMIT_ENABLED=false" \
-          --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}"
+          --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}" || {
+          echo "❌ Koyeb deployment failed"
+          echo "🔍 Checking deployment status..."
+          $HOME/.koyeb/bin/koyeb services get sales-buddy/webapp --app sales-buddy || true
+          exit 1
+        }
         
         echo "🎉 Docker deployment triggered for sales-buddy/webapp!"
-        echo "🌐 Check your service at: https://app.koyeb.com/apps/sales-buddy" 
+        
+        # Wait a moment and check deployment status
+        echo "⏳ Waiting for deployment to initialize..."
+        sleep 10
+        
+        echo "📊 Final deployment status:"
+        $HOME/.koyeb/bin/koyeb services get sales-buddy/webapp --app sales-buddy || true
+        
+        echo ""
+        echo "🌐 Check your service at: https://app.koyeb.com/apps/sales-buddy"
+        echo "📱 Monitor logs with: koyeb service logs sales-buddy/webapp --app sales-buddy" 
