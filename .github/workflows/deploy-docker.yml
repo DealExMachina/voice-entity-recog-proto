@@ -81,11 +81,11 @@ jobs:
         fi
 
         curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
-        echo "$HOME/.koyeb/bin" >> $GITHUB_PATH
+        export PATH="$HOME/.koyeb/bin:$PATH"
 
-        koyeb auth login --token ${{ secrets.KOYEB_TOKEN }}
+        $HOME/.koyeb/bin/koyeb auth login --token ${{ secrets.KOYEB_TOKEN }}
 
-        koyeb services update sales-buddy/webapp --app sales-buddy --upsert \
+        $HOME/.koyeb/bin/koyeb services update sales-buddy/webapp --app sales-buddy --upsert \
           --docker "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main" \
           --docker-private-registry-secret "GitHub-registry" \
           --ports "3000:http" \
