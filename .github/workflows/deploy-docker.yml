@@ -83,8 +83,6 @@ jobs:
           --ports "3000:http" \
           --regions "fra" \
           --instance-type "micro" \
-          --checks "3000:http:/health" \
-          --checks-grace-period "3000=60" \
           --env "NODE_ENV=production" \
           --env "PORT=3000" \
           --env "AI_PROVIDER=openai" \
@@ -96,8 +94,6 @@ jobs:
           --ports "3000:http" \
           --regions "fra" \
           --instance-type "micro" \
-          --checks "3000:http:/health" \
-          --checks-grace-period "3000=60" \
           --env "NODE_ENV=production" \
           --env "PORT=3000" \
           --env "AI_PROVIDER=openai" \
