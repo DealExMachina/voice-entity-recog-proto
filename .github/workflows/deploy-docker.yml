@@ -68,7 +68,6 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        target: production
 
     - name: Deploy to Koyeb
       if: github.ref == 'refs/heads/main'
@@ -96,7 +95,15 @@ jobs:
           echo "Updating service $SERVICE_NAME"
           koyeb services update $SERVICE_NAME --app ${{ env.APP_NAME }} \
             --docker "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main" \
-            --docker-private-registry-secret "GitHub-registry"
+            --docker-private-registry-secret "GitHub-registry" \
+            --ports "3000:http" \
+            --regions "fra" \
+            --instance-type "nano" \
+            --health-checks "http(path=/api/health,port=3000)" \
+            --env "NODE_ENV=production" \
+            --env "PORT=3000" \
+            --env "AI_PROVIDER=openai" \
+            --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}"
         else
           echo "Creating service $SERVICE_NAME"
           koyeb services create $SERVICE_NAME --app ${{ env.APP_NAME }} \
