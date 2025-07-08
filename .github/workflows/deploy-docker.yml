@@ -83,7 +83,7 @@ jobs:
         curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
         export PATH="$HOME/.koyeb/bin:$PATH"
 
-        $HOME/.koyeb/bin/koyeb auth login --token ${{ secrets.KOYEB_TOKEN }}
+        $HOME/.koyeb/bin/koyeb login --token ${{ secrets.KOYEB_TOKEN }}
 
         $HOME/.koyeb/bin/koyeb services update sales-buddy/webapp --app sales-buddy --upsert \
           --docker "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main" \
