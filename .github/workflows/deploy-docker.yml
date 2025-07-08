@@ -77,31 +77,26 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       run: |
         if [ -z "$KOYEB_TOKEN" ]; then
-          echo "⚠️  KOYEB_TOKEN not set - skipping deployment"
+          echo "⚠️ KOYEB_TOKEN not set - skipping deployment"
           exit 0
         fi
-        
-        # Install Koyeb CLI
+
         curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
         export PATH=$HOME/.koyeb/bin:$PATH
-        
-        # Login to Koyeb
+
         echo "$KOYEB_TOKEN" | koyeb auth login --token
-        
-        # Create app if needed
+
         if ! koyeb apps get ${{ env.APP_NAME }} >/dev/null 2>&1; then
           echo "Creating app ${{ env.APP_NAME }}"
           koyeb apps create ${{ env.APP_NAME }}
         fi
 
-        # Create or update the service
         SERVICE_NAME="webapp"
         if koyeb services get $SERVICE_NAME --app ${{ env.APP_NAME }} >/dev/null 2>&1; then
           echo "Updating service $SERVICE_NAME"
           koyeb services update $SERVICE_NAME --app ${{ env.APP_NAME }} \
             --docker "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main" \
-            --docker-private-registry-secret "GitHub-registry" \
-            --regions "fra" --instance-type "nano"
+            --docker-private-registry-secret "GitHub-registry"
         else
           echo "Creating service $SERVICE_NAME"
           koyeb services create $SERVICE_NAME --app ${{ env.APP_NAME }} \
@@ -112,6 +107,8 @@ jobs:
             --instance-type "nano" \
             --health-checks "http(path=/api/health,port=3000)" \
             --env "NODE_ENV=production" \
+            --env "PORT=3000" \
+            --env "AI_PROVIDER=openai" \
             --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}"
         fi
         
