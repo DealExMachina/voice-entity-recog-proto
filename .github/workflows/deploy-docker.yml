@@ -103,7 +103,9 @@ jobs:
         
         # Deploy to Koyeb with error handling
         echo "🚀 Deploying to Koyeb..."
-        $HOME/.koyeb/bin/koyeb services update sales-buddy/webapp --app sales-buddy --upsert \
+        SERVICE_NAME="webapp"
+        APP_NAME="sales-buddy"
+        if $HOME/.koyeb/bin/koyeb service update $SERVICE_NAME --app $APP_NAME \
           --docker "$DOCKER_IMAGE" \
           --docker-private-registry-secret "GitHub-registry" \
           --ports "3000:http" \
@@ -115,12 +117,24 @@ jobs:
           --env "PORT=3000" \
           --env "AI_PROVIDER=openai" \
           --env "RATE_LIMIT_ENABLED=false" \
-          --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}" || {
-          echo "❌ Koyeb deployment failed"
-          echo "🔍 Checking deployment status..."
-          $HOME/.koyeb/bin/koyeb services get sales-buddy/webapp --app sales-buddy || true
-          exit 1
-        }
+          --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}"; then
+          echo "✅ Service updated."
+        else
+          echo "ℹ️ Service does not exist, creating..."
+          $HOME/.koyeb/bin/koyeb service create $SERVICE_NAME --app $APP_NAME \
+            --docker "$DOCKER_IMAGE" \
+            --docker-private-registry-secret "GitHub-registry" \
+            --ports "3000:http" \
+            --regions "fra" \
+            --instance-type "micro" \
+            --checks "3000:http:/health" \
+            --checks-grace-period "3000=60" \
+            --env "NODE_ENV=production" \
+            --env "PORT=3000" \
+            --env "AI_PROVIDER=openai" \
+            --env "RATE_LIMIT_ENABLED=false" \
+            --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}"
+        fi
         
         echo "🎉 Docker deployment triggered for sales-buddy/webapp!"
         
