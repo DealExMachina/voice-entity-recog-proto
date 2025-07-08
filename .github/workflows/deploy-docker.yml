@@ -69,23 +69,16 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
 
-    - name: Install Koyeb CLI
-      run: curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
-
-    - name: Configure Koyeb CLI
-      run: |
-        mkdir -p $HOME/.koyeb
-        echo "api:" > $HOME/.koyeb.yaml
-        echo "  token: ${{ secrets.KOYEB_TOKEN }}" >> $HOME/.koyeb.yaml
+    - name: Install and configure the Koyeb CLI
+      uses: koyeb-community/koyeb-actions@v2
+      with:
+        api_token: "${{ secrets.KOYEB_TOKEN }}"
+        github_token: "${{ secrets.GITHUB_TOKEN }}"
 
     - name: Deploy to Koyeb
-      env:
-        DOCKER_IMAGE: ghcr.io/dealexmachina/voice-entity-recog-proto:main
       run: |
-        SERVICE_NAME="webapp"
-        APP_NAME="sales-buddy"
-        if $HOME/.koyeb/bin/koyeb service update $SERVICE_NAME --app $APP_NAME \
-          --docker "$DOCKER_IMAGE" \
+        koyeb service update webapp --app sales-buddy \
+          --docker ghcr.io/dealexmachina/voice-entity-recog-proto:main \
           --docker-private-registry-secret "GitHub-registry" \
           --ports "3000:http" \
           --regions "fra" \
@@ -96,24 +89,20 @@ jobs:
           --env "PORT=3000" \
           --env "AI_PROVIDER=openai" \
           --env "RATE_LIMIT_ENABLED=false" \
-          --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}"; then
-          echo "✅ Service updated."
-        else
-          echo "ℹ️ Service does not exist, creating..."
-          $HOME/.koyeb/bin/koyeb service create $SERVICE_NAME --app $APP_NAME \
-            --docker "$DOCKER_IMAGE" \
-            --docker-private-registry-secret "GitHub-registry" \
-            --ports "3000:http" \
-            --regions "fra" \
-            --instance-type "micro" \
-            --checks "3000:http:/health" \
-            --checks-grace-period "3000=60" \
-            --env "NODE_ENV=production" \
-            --env "PORT=3000" \
-            --env "AI_PROVIDER=openai" \
-            --env "RATE_LIMIT_ENABLED=false" \
-            --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}"
-        fi
+          --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}" \
+        || koyeb service create webapp --app sales-buddy \
+          --docker ghcr.io/dealexmachina/voice-entity-recog-proto:main \
+          --docker-private-registry-secret "GitHub-registry" \
+          --ports "3000:http" \
+          --regions "fra" \
+          --instance-type "micro" \
+          --checks "3000:http:/health" \
+          --checks-grace-period "3000=60" \
+          --env "NODE_ENV=production" \
+          --env "PORT=3000" \
+          --env "AI_PROVIDER=openai" \
+          --env "RATE_LIMIT_ENABLED=false" \
+          --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}"
         
         echo "🎉 Docker deployment triggered for sales-buddy/webapp!"
         
