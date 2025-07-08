@@ -1,4 +1,4 @@
-name: Deploy to Koyeb
+name: Deploy Docker to Koyeb
 
 on:
   push:
@@ -6,6 +6,8 @@ on:
   workflow_dispatch:
 
 env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
   APP_NAME: sales-buddy
 
 jobs:
@@ -30,16 +32,46 @@ jobs:
         AI_PROVIDER: demo
         RATE_LIMIT_ENABLED: false
 
-  deploy:
+  build-and-deploy:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
+    permissions:
+      contents: read
+      packages: write
+
     steps:
-    - name: Checkout code
+    - name: Checkout repository
       uses: actions/checkout@v4
-    
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        target: production
+
     - name: Deploy to Koyeb
+      if: github.ref == 'refs/heads/main'
       env:
         KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN }}
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -55,7 +87,7 @@ jobs:
         sudo mv koyeb /usr/local/bin/koyeb
         chmod +x /usr/local/bin/koyeb
         
-        # Login and deploy
+        # Login to Koyeb
         echo "$KOYEB_TOKEN" | koyeb auth login --token
         
         # Create app if needed
@@ -63,17 +95,27 @@ jobs:
           koyeb apps create $APP_NAME
         fi
         
-        # First remove was region and deploy only to Frankfurt
+        # Deploy Docker image to Frankfurt only
+        echo "🚀 Deploying Docker image to Koyeb Frankfurt..."
         koyeb services update 75e7338e-e657-402e-9f98-4e4fe4eedb9c \
+          --docker ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main \
+          --regions fra \
           --regions '!was' \
-          --git github.com/${{ github.repository }} \
-          --git-branch ${{ github.ref_name }} \
-          --git-build-command "npm ci && npm run build:ci" \
-          --git-run-command "npm start" \
           --env NODE_ENV=production \
           --env PORT=3000 \
-          --env AI_PROVIDER=demo \
-          --env RATE_LIMIT_ENABLED=false || echo "Update completed"
+          --env AI_PROVIDER=openai \
+          --env OPENAI_API_KEY="$OPENAI_API_KEY" \
+          --env RATE_LIMIT_ENABLED=true \
+          --env DB_PATH=/tmp/entities.db \
+          --ports 3000:http \
+          --health-checks 3000:http:/api/health \
+          --instance-type nano \
+          --scale 1
         
-        echo "🎉 Deployment to Frankfurt completed!"
+        echo "🎉 Docker deployment to Frankfurt completed!"
         echo "🌐 Check your service at: https://app.koyeb.com/apps/$APP_NAME"
+        
+        # Wait for deployment and show status
+        echo "⏳ Waiting for deployment to stabilize..."
+        sleep 30
+        koyeb services get 75e7338e-e657-402e-9f98-4e4fe4eedb9c --output table 

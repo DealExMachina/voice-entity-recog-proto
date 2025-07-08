@@ -1,0 +1,79 @@
+name: Deploy to Koyeb
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  APP_NAME: sales-buddy
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run tests
+      run: npm test
+      env:
+        AI_PROVIDER: demo
+        RATE_LIMIT_ENABLED: false
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Deploy to Koyeb
+      env:
+        KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        if [ -z "$KOYEB_TOKEN" ]; then
+          echo "⚠️  KOYEB_TOKEN not set - skipping deployment"
+          exit 0
+        fi
+        
+        # Install Koyeb CLI
+        curl -fsSL -o koyeb.tar.gz "https://github.com/koyeb/koyeb-cli/releases/latest/download/koyeb_linux_amd64.tar.gz"
+        tar -xzf koyeb.tar.gz
+        sudo mv koyeb /usr/local/bin/koyeb
+        chmod +x /usr/local/bin/koyeb
+        
+        # Login and deploy
+        echo "$KOYEB_TOKEN" | koyeb auth login --token
+        
+        # Create app if needed
+        if ! koyeb apps list --output json | jq -e ".apps[] | select(.name == \"$APP_NAME\")" > /dev/null 2>&1; then
+          koyeb apps create $APP_NAME
+        fi
+        
+        # First remove was region and deploy only to Frankfurt
+        koyeb services update 75e7338e-e657-402e-9f98-4e4fe4eedb9c \
+          --regions '!was' \
+          --git github.com/${{ github.repository }} \
+          --git-branch ${{ github.ref_name }} \
+          --git-build-command "npm ci && npm run build:ci" \
+          --git-run-command "npm start" \
+          --env NODE_ENV=production \
+          --env PORT=3000 \
+          --env AI_PROVIDER=demo \
+          --env RATE_LIMIT_ENABLED=false || echo "Update completed"
+        
+        echo "🎉 Deployment to Frankfurt completed!"
+        echo "🌐 Check your service at: https://app.koyeb.com/apps/$APP_NAME"
