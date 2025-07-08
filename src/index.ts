@@ -175,18 +175,16 @@ wss.on('connection', (ws: WebSocket) => {
 // API routes
 app.use('/api', apiRoutes);
 
-// Serve main app (production optimized HTML in production)
+// Serve main app (always use development HTML for consistent UX)
 app.get('/', (req: Request, res: Response) => {
-  const isProduction = process.env.NODE_ENV === 'production';
-  const htmlFile = isProduction ? '../public/index.production.html' : '../public/index.html';
+  const htmlFile = '../public/index.html'; // Always use development HTML
   const fullPath = path.join(__dirname, htmlFile);
   
-  // Send the appropriate HTML file based on environment
+  // Send the development HTML file
   res.sendFile(fullPath, (err?: Error) => {
-    if (err && isProduction) {
-      // Fallback to development HTML if production file doesn't exist
-      console.warn('Production HTML not found, falling back to development HTML');
-      res.sendFile(path.join(__dirname, '../public/index.html'));
+    if (err) {
+      console.error('Failed to serve HTML file:', err);
+      res.status(500).send('Internal Server Error');
     }
   });
 });
