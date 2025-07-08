@@ -52,11 +52,9 @@ app.use(express.static(path.join(__dirname, '../public'), {
 
 // Direct health endpoint for Koyeb (BEFORE rate limiting)
 app.get('/health', (req: Request, res: Response): void => {
-  // Check if services are actually initialized
-  const servicesReady = !!(app.locals.mastraAgent && app.locals.mcpService);
-  
-  if (!servicesReady) {
-    // Services not ready yet - return 503 Service Unavailable
+  // Check if server is completely ready (set only after server.listen() completes)
+  if (!serverReady) {
+    // Server not completely ready yet - return 503 Service Unavailable
     res.status(503).json({
       status: 'starting',
       timestamp: new Date().toISOString(),
@@ -70,7 +68,7 @@ app.get('/health', (req: Request, res: Response): void => {
     return;
   }
   
-  // Services are ready - return 200 OK
+  // Server is completely ready - return 200 OK
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -89,6 +87,7 @@ app.use('/api', generalLimiter);
 // Initialize services
 let mastraAgent: MastraAgent;
 let mcpService: McpService;
+let serverReady = false; // Flag to track when server is completely ready
 
 async function initializeServices(): Promise<void> {
   try {
@@ -212,6 +211,10 @@ async function startServer(): Promise<void> {
     console.log(`🚀 Server running on http://${HOST}:${portNumber}`);
     console.log(`📊 Database: ${process.env.DB_PATH || './data/entities.db'}`);
     console.log(`🎯 AI Provider: ${process.env.AI_PROVIDER || 'openai'}`);
+    
+    // Set ready flag ONLY after server is completely listening and ready
+    serverReady = true;
+    console.log(`✅ Server ready for health checks`);
   });
 }
 
