@@ -69,40 +69,19 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
 
-    - name: Deploy to Koyeb
-      if: github.ref == 'refs/heads/main'
-      env:
-        KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN }}
+    - name: Install Koyeb CLI
+      run: curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+
+    - name: Configure Koyeb CLI
       run: |
-        if [ -z "$KOYEB_TOKEN" ]; then
-          echo "⚠️ KOYEB_TOKEN not set - skipping deployment"
-          exit 0
-        fi
-
-        curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
-        export PATH="$HOME/.koyeb/bin:$PATH"
-
-        # Create Koyeb config file for non-interactive environment
         mkdir -p $HOME/.koyeb
-        cat > $HOME/.koyeb.yaml << EOF
-        api:
-          url: https://app.koyeb.com
-          token: ${{ secrets.KOYEB_TOKEN }}
-        EOF
+        echo "api:" > $HOME/.koyeb.yaml
+        echo "  token: ${{ secrets.KOYEB_TOKEN }}" >> $HOME/.koyeb.yaml
 
-        # Verify Koyeb CLI is working
-        echo "🔍 Testing Koyeb CLI authentication..."
-        $HOME/.koyeb/bin/koyeb apps list || {
-          echo "❌ Koyeb authentication failed"
-          exit 1
-        }
-
-        # Extract the main tag from the built image
-        DOCKER_IMAGE=$(echo '${{ steps.meta.outputs.tags }}' | grep ':main' || echo '${{ steps.meta.outputs.tags }}' | head -n1)
-        echo "🐳 Using Docker image: $DOCKER_IMAGE"
-        
-        # Deploy to Koyeb with error handling
-        echo "🚀 Deploying to Koyeb..."
+    - name: Deploy to Koyeb
+      env:
+        DOCKER_IMAGE: ghcr.io/dealexmachina/voice-entity-recog-proto:main
+      run: |
         SERVICE_NAME="webapp"
         APP_NAME="sales-buddy"
         if $HOME/.koyeb/bin/koyeb service update $SERVICE_NAME --app $APP_NAME \
