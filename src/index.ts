@@ -50,8 +50,21 @@ app.use(express.static(path.join(__dirname, '../public'), {
   index: false // Disable automatic index.html serving
 }));
 
-// Apply rate limiting
-app.use('/api/health', healthLimiter);
+// Direct health endpoint for Koyeb (BEFORE rate limiting)
+app.get('/health', (req: Request, res: Response) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    services: [
+      { name: 'database', status: 'up', lastCheck: new Date().toISOString() },
+      { name: 'mcp', status: 'up', lastCheck: new Date().toISOString() },
+      { name: 'mastra', status: 'up', lastCheck: new Date().toISOString() }
+    ],
+    version: '1.0.0'
+  });
+});
+
+// Apply rate limiting only to API routes
 app.use('/api', generalLimiter);
 
 // Initialize services
@@ -141,20 +154,6 @@ wss.on('connection', (ws: WebSocket) => {
   });
 });
 
-// Direct health endpoint for Koyeb (no rate limiting)
-app.get('/health', (req: Request, res: Response) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    services: [
-      { name: 'database', status: 'up', lastCheck: new Date().toISOString() },
-      { name: 'mcp', status: 'up', lastCheck: new Date().toISOString() },
-      { name: 'mastra', status: 'up', lastCheck: new Date().toISOString() }
-    ],
-    version: '1.0.0'
-  });
-});
-
 // API routes
 app.use('/api', apiRoutes);
 
@@ -188,8 +187,10 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
 async function startServer(): Promise<void> {
   await initializeServices();
   
-  server.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
+  const HOST = '0.0.0.0'; // Explicitly bind to all interfaces for Koyeb
+  const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
+  server.listen(portNumber, HOST, () => {
+    console.log(`🚀 Server running on http://${HOST}:${portNumber}`);
     console.log(`📊 Database: ${process.env.DB_PATH || './data/entities.db'}`);
     console.log(`🎯 AI Provider: ${process.env.AI_PROVIDER || 'openai'}`);
   });
