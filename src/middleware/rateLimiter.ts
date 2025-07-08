@@ -77,8 +77,22 @@ export const uploadLimiter: RequestHandler = createRateLimiter({
 });
 
 export const healthLimiter: RequestHandler = createRateLimiter({
-  max: 1000, // Very lenient for health checks
+  max: 10000, // Very lenient for health checks
   windowMs: 15 * 60 * 1000, // 15 minutes
+  skip: (req: Request) => {
+    // Skip rate limiting for Koyeb infrastructure IPs
+    const ip = req.ip || req.connection.remoteAddress || '';
+    const koyebIpPatterns = [
+      /^::ffff:57\.129\./, // Koyeb health check IP pattern
+      /^57\.129\./, // Direct Koyeb IP
+      /^::ffff:10\./, // Internal/private IPs
+      /^10\./, // Internal IPs
+      /^172\./, // Internal IPs
+      /^192\.168\./ // Internal IPs
+    ];
+    
+    return koyebIpPatterns.some(pattern => pattern.test(ip));
+  }
 });
 
 // Export the rate limiter creator for custom use
