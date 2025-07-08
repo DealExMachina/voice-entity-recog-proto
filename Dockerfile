@@ -1,5 +1,5 @@
-# Use Node.js 22 LTS
-FROM node:22-slim AS base
+# Use Node.js 22 LTS - Single stage build to eliminate copy issues
+FROM node:22-slim
 
 # Set working directory
 WORKDIR /app
@@ -18,33 +18,15 @@ RUN npm ci --include=dev
 # Copy source code
 COPY . .
 
-# Build the application and production assets (force cache break 2025-07-08)
+# Build the application and production assets
 RUN npm run build:production
 
 # DEBUG: Show what files were actually created
 RUN echo "=== DEBUG: Contents of /app/dist ===" && ls -la /app/dist/ || echo "dist directory does not exist"
 RUN echo "=== DEBUG: Full directory tree ===" && find /app -name "*.js" -type f | head -20
 
-# Production stage - use standard Linux instead of Alpine for DuckDB compatibility
-FROM node:22-slim AS production
-
-# Set working directory
-WORKDIR /app
-
-# Install curl for health checks and update package list
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy package files
-COPY package*.json ./
-
-# Install only production dependencies
+# Remove devDependencies but keep built files
 RUN npm ci --omit=dev && npm cache clean --force
-
-# Copy built application and optimized assets from base stage
-COPY --from=base /app/dist ./dist
-COPY --from=base /app/public ./public
 
 # Create data directory for database
 RUN mkdir -p /app/data
