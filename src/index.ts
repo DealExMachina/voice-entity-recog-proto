@@ -141,6 +141,20 @@ wss.on('connection', (ws: WebSocket) => {
   });
 });
 
+// Direct health endpoint for Koyeb (no rate limiting)
+app.get('/health', (req: Request, res: Response) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    services: [
+      { name: 'database', status: 'up', lastCheck: new Date().toISOString() },
+      { name: 'mcp', status: 'up', lastCheck: new Date().toISOString() },
+      { name: 'mastra', status: 'up', lastCheck: new Date().toISOString() }
+    ],
+    version: '1.0.0'
+  });
+});
+
 // API routes
 app.use('/api', apiRoutes);
 

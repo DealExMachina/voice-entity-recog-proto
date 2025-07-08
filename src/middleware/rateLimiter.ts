@@ -80,11 +80,20 @@ export const healthLimiter: RequestHandler = createRateLimiter({
   max: 10000, // Very lenient for health checks
   windowMs: 15 * 60 * 1000, // 15 minutes
   skip: (req: Request) => {
-    // Skip rate limiting for Koyeb infrastructure IPs
+    // Skip rate limiting for Koyeb infrastructure IPs and health check paths
     const ip = req.ip || req.connection.remoteAddress || '';
+    const path = req.path || req.url || '';
+    
+    // Skip all health check paths regardless of IP
+    if (path === '/health' || path === '/api/health') {
+      return true;
+    }
+    
     const koyebIpPatterns = [
       /^::ffff:57\.129\./, // Koyeb health check IP pattern
+      /^::ffff:141\.95\./, // New Koyeb health check IP pattern
       /^57\.129\./, // Direct Koyeb IP
+      /^141\.95\./, // Direct Koyeb IP
       /^::ffff:10\./, // Internal/private IPs
       /^10\./, // Internal IPs
       /^172\./, // Internal IPs
