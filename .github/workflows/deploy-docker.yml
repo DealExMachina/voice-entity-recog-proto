@@ -82,40 +82,38 @@ jobs:
         fi
         
         # Install Koyeb CLI
-        curl -fsSL -o koyeb.tar.gz "https://github.com/koyeb/koyeb-cli/releases/latest/download/koyeb_linux_amd64.tar.gz"
-        tar -xzf koyeb.tar.gz
-        sudo mv koyeb /usr/local/bin/koyeb
-        chmod +x /usr/local/bin/koyeb
+        curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+        export PATH=$HOME/.koyeb/bin:$PATH
         
         # Login to Koyeb
         echo "$KOYEB_TOKEN" | koyeb auth login --token
         
         # Create app if needed
-        if ! koyeb apps list --output json | jq -e ".apps[] | select(.name == \"$APP_NAME\")" > /dev/null 2>&1; then
-          koyeb apps create $APP_NAME
+        if ! koyeb apps get ${{ env.APP_NAME }} >/dev/null 2>&1; then
+          echo "Creating app ${{ env.APP_NAME }}"
+          koyeb apps create ${{ env.APP_NAME }}
+        fi
+
+        # Create or update the service
+        SERVICE_NAME="webapp"
+        if koyeb services get $SERVICE_NAME --app ${{ env.APP_NAME }} >/dev/null 2>&1; then
+          echo "Updating service $SERVICE_NAME"
+          koyeb services update $SERVICE_NAME --app ${{ env.APP_NAME }} \
+            --docker "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main" \
+            --docker-private-registry-secret "GitHub-registry" \
+            --regions "fra" --instance-type "nano"
+        else
+          echo "Creating service $SERVICE_NAME"
+          koyeb services create $SERVICE_NAME --app ${{ env.APP_NAME }} \
+            --docker "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main" \
+            --docker-private-registry-secret "GitHub-registry" \
+            --ports "3000:http" \
+            --regions "fra" \
+            --instance-type "nano" \
+            --health-checks "http(path=/api/health,port=3000)" \
+            --env "NODE_ENV=production" \
+            --env "OPENAI_API_KEY={{secret.OPENAI_API_KEY}}"
         fi
         
-        # Deploy Docker image to Frankfurt only
-        echo "🚀 Deploying Docker image to Koyeb Frankfurt..."
-        koyeb services update 75e7338e-e657-402e-9f98-4e4fe4eedb9c \
-          --docker ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main \
-          --regions fra \
-          --regions '!was' \
-          --env NODE_ENV=production \
-          --env PORT=3000 \
-          --env AI_PROVIDER=openai \
-          --env OPENAI_API_KEY="$OPENAI_API_KEY" \
-          --env RATE_LIMIT_ENABLED=true \
-          --env DB_PATH=/tmp/entities.db \
-          --ports 3000:http \
-          --health-checks 3000:http:/api/health \
-          --instance-type nano \
-          --scale 1
-        
-        echo "🎉 Docker deployment to Frankfurt completed!"
-        echo "🌐 Check your service at: https://app.koyeb.com/apps/$APP_NAME"
-        
-        # Wait for deployment and show status
-        echo "⏳ Waiting for deployment to stabilize..."
-        sleep 30
-        koyeb services get 75e7338e-e657-402e-9f98-4e4fe4eedb9c --output table 
+        echo "🎉 Docker deployment triggered for ${{ env.APP_NAME }}/$SERVICE_NAME!"
+        echo "🌐 Check your service at: https://app.koyeb.com/apps/${{ env.APP_NAME }}" 

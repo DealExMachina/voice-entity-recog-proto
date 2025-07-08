@@ -1,37 +1,34 @@
-# Use Node.js 22 LTS - Single stage build to eliminate copy issues
-FROM node:22-slim
+# Stage 1: Builder
+FROM node:22-slim AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Install curl for health checks and update package list
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy package files
+# Copy package files and install all dependencies
 COPY package*.json ./
-
-# Install dependencies (including devDependencies for build)
 RUN npm ci --include=dev
 
-# Copy source code
+# Copy the rest of the source code
 COPY . .
 
-# Build the application and production assets
+# Build the application
 RUN npm run build:production
 
-# DEBUG: Show what files were actually created
-RUN echo "=== DEBUG: Contents of /app/dist ===" && ls -la /app/dist/ || echo "dist directory does not exist"
-RUN echo "=== DEBUG: Full directory tree ===" && find /app -name "*.js" -type f | head -20
+# Prune development dependencies
+RUN npm prune --production
 
-# Remove devDependencies but keep built files
-RUN npm ci --omit=dev && npm cache clean --force
 
-# Create data directory for database
-RUN mkdir -p /app/data
+# Stage 2: Production
+FROM node:22-slim AS production
 
-# Create non-root user (Debian syntax)
+WORKDIR /app
+
+# Copy production dependencies and built assets from the builder stage
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/public ./public
+COPY package*.json ./
+
+# Create non-root user
 RUN groupadd -g 1001 nodejs && \
     useradd -r -u 1001 -g nodejs sales-buddy
 
@@ -41,11 +38,10 @@ RUN chown -R sales-buddy:nodejs /app
 # Switch to non-root user
 USER sales-buddy
 
-# Expose port (Koyeb uses 8000, local uses 3000)
-EXPOSE 8000
+# Expose port
 EXPOSE 3000
 
-# Health check (check both ports)
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:${PORT:-3000}/api/health || exit 1
 
