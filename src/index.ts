@@ -51,7 +51,26 @@ app.use(express.static(path.join(__dirname, '../public'), {
 }));
 
 // Direct health endpoint for Koyeb (BEFORE rate limiting)
-app.get('/health', (req: Request, res: Response) => {
+app.get('/health', (req: Request, res: Response): void => {
+  // Check if services are actually initialized
+  const servicesReady = !!(app.locals.mastraAgent && app.locals.mcpService);
+  
+  if (!servicesReady) {
+    // Services not ready yet - return 503 Service Unavailable
+    res.status(503).json({
+      status: 'starting',
+      timestamp: new Date().toISOString(),
+      services: [
+        { name: 'database', status: 'initializing', lastCheck: new Date().toISOString() },
+        { name: 'mcp', status: 'initializing', lastCheck: new Date().toISOString() },
+        { name: 'mastra', status: 'initializing', lastCheck: new Date().toISOString() }
+      ],
+      version: '1.0.0'
+    });
+    return;
+  }
+  
+  // Services are ready - return 200 OK
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),

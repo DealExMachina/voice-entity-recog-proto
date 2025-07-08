@@ -61,21 +61,7 @@ const upload = multer({
   }
 });
 
-// Health check
-router.get('/health', (req: Request, res: Response) => {
-  const healthResponse: HealthResponse = {
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    services: [
-      { name: 'database', status: 'up', lastCheck: new Date().toISOString() },
-      { name: 'mcp', status: 'up', lastCheck: new Date().toISOString() },
-      { name: 'mastra', status: 'up', lastCheck: new Date().toISOString() }
-    ],
-    version: '1.0.0'
-  };
-  
-  res.json(healthResponse);
-});
+// Note: Main health endpoint is now handled directly in src/index.ts for Koyeb compatibility
 
 // Transcribe audio (with upload rate limiting)
 router.post('/transcribe', uploadLimiter, upload.single('audio'), async (req: Request, res: Response) => {
