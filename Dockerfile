@@ -18,7 +18,7 @@ RUN npm ci --include=dev
 # Copy source code
 COPY . .
 
-# Build the application and production assets
+# Build the application and production assets (force cache break 2025-07-08)
 RUN npm run build:production
 
 # Production stage - use standard Linux instead of Alpine for DuckDB compatibility
