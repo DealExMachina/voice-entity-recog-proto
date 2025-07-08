@@ -95,7 +95,8 @@ koyeb services create web \
     --env AI_PROVIDER=demo \
     --env DB_PATH=/tmp/entities.db \
     --env RATE_LIMIT_ENABLED=true \
-    --health-checks "http(path=/api/health,port=3000)" \
+    --checks "3000:http:/health" \
+    --checks-grace-period "3000=60" \
     --scale 1
 
 echo "⏳ Waiting for deployment..."

@@ -91,7 +91,8 @@ jobs:
           --ports "3000:http" \
           --regions "fra" \
           --instance-type "micro" \
-          --health-checks "http(path=/health,port=3000,initial_delay=60s,interval=30s,timeout=10s,retries=3)" \
+          --checks "3000:http:/health" \
+          --checks-grace-period "3000=60" \
           --env "NODE_ENV=production" \
           --env "PORT=3000" \
           --env "AI_PROVIDER=openai" \

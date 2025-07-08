@@ -28,13 +28,9 @@ services:
       - key: OPENAI_API_KEY
         scope: secret
     health_checks:
-      http:
-        path: /health
+      - path: /health
         port: 3000
-        initial_delay: 60s
-        interval: 30s
-        timeout: 10s
-        retries: 3
+        grace_period: 60
     scaling:
       min: 1
       max: 3 
