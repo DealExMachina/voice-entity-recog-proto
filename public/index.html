@@ -23,6 +23,66 @@
             50% { opacity: 0.7; }
         }
 
+        .processing-animation {
+            animation: processingPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes processingPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .progress-bar {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-bar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .recording-indicator {
+            animation: recordingBlink 1.5s ease-in-out infinite;
+        }
+
+        @keyframes recordingBlink {
+            0%, 100% { opacity: 1; background-color: #ef4444; }
+            50% { opacity: 0.3; background-color: #dc2626; }
+        }
+
+        .processing-spinner {
+            animation: spin 1.5s linear infinite, colorShift 3s ease-in-out infinite;
+        }
+
+        @keyframes colorShift {
+            0%, 100% { border-color: #3b82f6 transparent transparent transparent; }
+            25% { border-color: #8b5cf6 transparent transparent transparent; }
+            50% { border-color: #06b6d4 transparent transparent transparent; }
+            75% { border-color: #10b981 transparent transparent transparent; }
+        }
+
+        .success-bounce {
+            animation: successBounce 0.6s ease-out;
+        }
+
+        @keyframes successBounce {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
         .entity-card {
             backdrop-filter: blur(8px);
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);

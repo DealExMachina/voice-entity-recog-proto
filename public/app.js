@@ -149,15 +149,17 @@ class MastraVoiceApp {
 
     async startRecording() {
         try {
-            // Immediate visual feedback
-            this.showProcessingState('Requesting microphone access...');
+            // Immediate visual feedback with better animation
+            this.showProcessingState('🎯 Initializing recording system...', 'requesting');
             this.updateRecordingUI('requesting');
             
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
-                    sampleRate: 44100
+                    autoGainControl: true,
+                    sampleRate: 44100,
+                    channelCount: 1 // Mono for better performance
                 } 
             });
             
@@ -167,28 +169,31 @@ class MastraVoiceApp {
             });
             
             // Update UI to show we're setting up recording
-            this.showProcessingState('Setting up recording...');
+            this.showProcessingState('⚙️ Optimizing audio settings...', 'preparing');
             this.updateRecordingUI('preparing');
             
-            // Try different MIME types for better compatibility
-            let mimeType = 'audio/webm;codecs=opus';
-            if (!MediaRecorder.isTypeSupported(mimeType)) {
-                console.warn('WebM/Opus not supported, trying WebM/VP8...');
-                mimeType = 'audio/webm';
-                if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    console.warn('WebM not supported, trying MP4...');
-                    mimeType = 'audio/mp4';
-                    if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        console.warn('MP4 not supported, using default...');
-                        mimeType = '';
-                    }
+            // Try different MIME types for better performance and compatibility
+            const mimeTypes = [
+                'audio/webm;codecs=opus', // Best compression
+                'audio/webm;codecs=pcm',  // Better quality
+                'audio/webm',             // Fallback
+                'audio/mp4',              // Safari support
+                ''                        // Browser default
+            ];
+            
+            let mimeType = '';
+            for (const type of mimeTypes) {
+                if (!type || MediaRecorder.isTypeSupported(type)) {
+                    mimeType = type;
+                    break;
                 }
             }
             
-            console.log('🎵 Using MIME type:', mimeType || 'default');
+            console.log('🎵 Using optimized MIME type:', mimeType || 'default');
             
             this.mediaRecorder = new MediaRecorder(stream, { 
-                mimeType: mimeType || undefined
+                mimeType: mimeType || undefined,
+                audioBitsPerSecond: 128000 // Optimize bitrate for performance
             });
             
             console.log('📹 MediaRecorder created:', {
@@ -205,6 +210,8 @@ class MastraVoiceApp {
                 });
                 if (event.data.size > 0) {
                     this.audioChunks.push(event.data);
+                    // Real-time chunk processing could be added here
+                    this.updateChunkProgress();
                 }
             };
             
@@ -228,8 +235,9 @@ class MastraVoiceApp {
                 this.startRecordingCountdown();
             };
             
-            this.mediaRecorder.start(1000); // Collect data every second for better chunking
-            console.log('🎬 Starting MediaRecorder...');
+            // Start recording with smaller chunks for better responsiveness
+            this.mediaRecorder.start(500); // 500ms chunks for better real-time potential
+            console.log('🎬 Starting optimized MediaRecorder...');
             
         } catch (error) {
             console.error('Failed to start recording:', error);
@@ -239,7 +247,32 @@ class MastraVoiceApp {
         }
     }
 
-
+    updateChunkProgress() {
+        const chunkCount = this.audioChunks.length;
+        const totalSize = this.audioChunks.reduce((sum, chunk) => sum + chunk.size, 0);
+        const sizeKB = Math.round(totalSize / 1024);
+        
+        // Update recording status with chunk info
+        if (this.isRecording) {
+            const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            
+            document.getElementById('recordingStatus').innerHTML = `
+                <div class="flex items-center space-x-3 p-2">
+                    <div class="w-3 h-3 rounded-full recording-indicator"></div>
+                    <span class="text-red-600 font-medium">Recording: ${timeStr}</span>
+                    <div class="flex items-center space-x-1 text-slate-400 text-xs">
+                        <span>•</span>
+                        <span>${sizeKB}KB</span>
+                        <span>•</span>
+                        <span>${chunkCount} chunks</span>
+                    </div>
+                </div>
+            `;
+        }
+    }
 
     startRecordingCountdown() {
         // Play audio notification to indicate recording started
@@ -404,6 +437,9 @@ class MastraVoiceApp {
         try {
             console.log('🎬 Processing recording with', this.audioChunks.length, 'chunks');
             
+            // Enhanced processing animation
+            this.showProcessingAnimation('🔄 Preparing audio for analysis...', 0);
+            
             if (this.audioChunks.length === 0) {
                 throw new Error('No audio data recorded - please try recording again');
             }
@@ -415,6 +451,8 @@ class MastraVoiceApp {
             if (totalSize < 1000) { // Less than 1KB suggests no real audio was captured
                 throw new Error('Audio recording too short or empty - please speak longer');
             }
+            
+            this.showProcessingAnimation('🎵 Optimizing audio format...', 20);
             
             // Determine the actual MIME type from the first chunk
             const firstChunk = this.audioChunks[0];
@@ -433,6 +471,8 @@ class MastraVoiceApp {
                 throw new Error('Failed to create audio blob - please try recording again');
             }
             
+            this.showProcessingAnimation('📁 Packaging for upload...', 40);
+            
             // Determine appropriate filename based on MIME type
             let filename = 'recording.webm'; // default
             if (actualMimeType.includes('mp4')) {
@@ -445,13 +485,108 @@ class MastraVoiceApp {
             
             console.log('📁 Using filename:', filename);
             
-            // Upload the audio
-            await this.uploadAudio(audioBlob, filename);
+            this.showProcessingAnimation('🚀 Starting AI analysis...', 60);
+            
+            // Upload the audio with enhanced progress tracking
+            await this.uploadAudioWithProgress(audioBlob, filename);
             
         } catch (error) {
             console.error('🚨 Processing error:', error);
             this.showToast(`Processing failed: ${error.message}`, 'error');
             this.hideProcessingState();
+        }
+    }
+
+    showProcessingAnimation(message, progress = 0) {
+        const recordingStatus = document.getElementById('recordingStatus');
+        const isComplete = progress >= 100;
+        
+        recordingStatus.innerHTML = `
+            <div class="flex flex-col items-center space-y-3 p-4 processing-animation">
+                <div class="flex items-center space-x-3">
+                    <div class="relative">
+                        <div class="processing-spinner rounded-full h-8 w-8 border-4 border-blue-200"></div>
+                        <div class="processing-spinner rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent absolute top-0"></div>
+                    </div>
+                    <span class="text-blue-600 font-medium ${isComplete ? 'success-bounce' : ''}">${message}</span>
+                </div>
+                <div class="w-64 bg-gray-200 rounded-full h-2 progress-bar overflow-hidden">
+                    <div class="bg-gradient-to-r from-blue-500 via-purple-500 to-green-500 h-2 rounded-full transition-all duration-1000 ease-out ${isComplete ? 'success-bounce' : ''}" 
+                         style="width: ${progress}%"></div>
+                </div>
+                <div class="text-xs text-slate-500 transition-all duration-300">
+                    ${progress}% complete ${isComplete ? '🎉' : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    async uploadAudioWithProgress(audioBlob, filename) {
+        try {
+            this.isProcessing = true;
+            
+            // Ensure we have a valid AI provider
+            const provider = this.currentAiProvider || 'openai';
+            const providerName = provider.toUpperCase();
+            
+            this.showProcessingAnimation(`🧠 Processing with ${providerName}...`, 70);
+            
+            console.log('📤 Uploading audio:', {
+                filename: filename,
+                size: audioBlob.size,
+                type: audioBlob.type,
+                provider: provider
+            });
+            
+            const formData = new FormData();
+            formData.append('audio', audioBlob, filename);
+            
+            // Enhanced upload with progress simulation
+            this.showProcessingAnimation(`📡 Uploading to ${providerName}...`, 80);
+            
+            const response = await fetch('/api/process-audio', {
+                method: 'POST',
+                body: formData
+            });
+            
+            this.showProcessingAnimation('🔍 Analyzing transcription...', 90);
+            
+            console.log('📥 Server response status:', response.status);
+            const result = await response.json();
+            console.log('📋 Server response:', result);
+            
+            if (result.success) {
+                this.showProcessingAnimation('✅ Extracting entities...', 95);
+                
+                // Add a brief delay to show completion
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                this.showProcessingAnimation('🎉 Analysis complete!', 100);
+                
+                this.displayTranscription(result.data.transcription);
+                this.displayEntities(result.data.entities);
+                this.displayAnalysis(result.data.analysis);
+                this.loadDatabaseEntities(); // Refresh database view
+                
+                // Show success with provider info
+                const providerInfo = provider === 'demo' ? 'Demo Mode' : 
+                                   provider === 'openai' ? 'OpenAI' : 'Mistral AI';
+                this.showToast(`✓ Audio processed successfully with ${providerInfo}!`);
+                
+                // Clear processing state after success
+                setTimeout(() => {
+                    this.hideProcessingState();
+                }, 2000);
+            } else {
+                throw new Error(result.message || result.error || 'Processing failed');
+            }
+            
+        } catch (error) {
+            console.error('Upload error:', error);
+            this.showToast(`Upload failed: ${error.message}`, 'error');
+        } finally {
+            this.isProcessing = false;
+            // Don't hide processing state immediately if successful - let the success animation play
         }
     }
 
@@ -470,60 +605,13 @@ class MastraVoiceApp {
             return;
         }
         
-        this.showProcessingState('Processing uploaded file...');
-        await this.uploadAudio(file, file.name);
+        this.showProcessingAnimation('📁 Processing uploaded file...', 10);
+        await this.uploadAudioWithProgress(file, file.name);
     }
 
+    // Backwards compatibility
     async uploadAudio(audioBlob, filename) {
-        try {
-            this.isProcessing = true;
-            
-            // Ensure we have a valid AI provider
-            const provider = this.currentAiProvider || 'openai';
-            const providerName = provider.toUpperCase();
-            
-            this.showProcessingState(`Processing with ${providerName}...`);
-            
-            console.log('📤 Uploading audio:', {
-                filename: filename,
-                size: audioBlob.size,
-                type: audioBlob.type,
-                provider: provider
-            });
-            
-            const formData = new FormData();
-            formData.append('audio', audioBlob, filename);
-            
-            const response = await fetch('/api/process-audio', {
-                method: 'POST',
-                body: formData
-            });
-            
-            console.log('📥 Server response status:', response.status);
-            const result = await response.json();
-            console.log('📋 Server response:', result);
-            
-            if (result.success) {
-                this.displayTranscription(result.data.transcription);
-                this.displayEntities(result.data.entities);
-                this.displayAnalysis(result.data.analysis);
-                this.loadDatabaseEntities(); // Refresh database view
-                
-                // Show success with provider info
-                const providerInfo = provider === 'demo' ? 'Demo Mode' : 
-                                   provider === 'openai' ? 'OpenAI' : 'Mistral AI';
-                this.showToast(`✓ Audio processed successfully with ${providerInfo}!`);
-            } else {
-                throw new Error(result.message || result.error || 'Processing failed');
-            }
-            
-        } catch (error) {
-            console.error('Upload error:', error);
-            this.showToast(`Upload failed: ${error.message}`, 'error');
-        } finally {
-            this.isProcessing = false;
-            this.hideProcessingState();
-        }
+        return this.uploadAudioWithProgress(audioBlob, filename);
     }
 
     async processText() {
@@ -575,13 +663,31 @@ class MastraVoiceApp {
         }
     }
 
-    showProcessingState(message) {
-        document.getElementById('recordingStatus').innerHTML = `
-            <div class="flex items-center space-x-2">
-                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                <span class="text-blue-600 font-medium">${message}</span>
-            </div>
-        `;
+    showProcessingState(message, state = 'idle') {
+        const recordBtn = document.getElementById('recordBtn');
+        const recordingStatus = document.getElementById('recordingStatus');
+        
+        if (state === 'idle') {
+            recordBtn.innerHTML = `
+                <div class="flex flex-col items-center">
+                    <i data-lucide="mic" class="w-8 h-8 mb-2"></i>
+                    <span class="text-sm">Record</span>
+                </div>
+            `;
+            recordBtn.className = 'record-button bg-gradient-to-br from-red-50 to-rose-100 border-2 border-red-200 text-red-700 font-medium hover:from-red-100 hover:to-rose-200 flex items-center justify-center';
+            recordingStatus.textContent = '';
+        } else {
+            recordBtn.innerHTML = `
+                <div class="flex flex-col items-center">
+                    <i data-lucide="${state}" class="w-8 h-8 mb-2 animate-spin"></i>
+                    <span class="text-sm">${message}</span>
+                </div>
+            `;
+            recordBtn.className = `record-button bg-gradient-to-br from-${state}-100 to-${state}-200 border-2 border-${state}-300 text-${state}-800 font-medium flex items-center justify-center`;
+            recordingStatus.textContent = message;
+        }
+        
+        lucide.createIcons();
     }
 
     hideProcessingState() {

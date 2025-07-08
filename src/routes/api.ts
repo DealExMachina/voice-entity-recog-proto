@@ -105,6 +105,8 @@ router.post('/transcribe', uploadLimiter, upload.single('audio'), async (req: Re
 
 // Process audio (transcribe + extract entities) (with AI rate limiting)
 router.post('/process-audio', aiLimiter, upload.single('audio'), async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  
   try {
     const { mastraAgent, mcpService } = req.app.locals;
     
@@ -118,47 +120,82 @@ router.post('/process-audio', aiLimiter, upload.single('audio'), async (req: Req
     // Get audio duration from form data if provided
     const audioDuration = req.body.duration ? parseFloat(req.body.duration) : 0;
 
-    console.log('🎤 Attempting OpenAI Whisper transcription...');
-    console.log('📊 Audio buffer size:', req.file.buffer.length, 'bytes');
+    console.log('🎤 Starting optimized audio processing pipeline...');
+    console.log('📊 Audio details:', {
+      size: req.file.buffer.length,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      duration: audioDuration
+    });
     
-    // Step 1: Transcribe audio
+    // Step 1: Transcribe audio (this is the main bottleneck)
+    console.log('🔄 Step 1/4: Transcribing audio with AI...');
+    const transcriptionStart = Date.now();
     const transcription = await mastraAgent.transcribe(req.file.buffer);
-    console.log('✅ Whisper transcription successful:', transcription);
+    const transcriptionTime = Date.now() - transcriptionStart;
+    console.log(`✅ Transcription completed in ${transcriptionTime}ms:`, transcription.substring(0, 100) + '...');
     
-    // Step 2: Extract entities
-    console.log('🔍 Sending to OpenAI for entity extraction...');
+    // Step 2: Extract entities (parallel potential, but depends on transcription)
+    console.log('🔄 Step 2/4: Extracting entities from transcription...');
+    const entityStart = Date.now();
     const entities = await mastraAgent.extractEntities(transcription);
-    console.log('📥 OpenAI response:', JSON.stringify({ entities }, null, 2));
+    const entityTime = Date.now() - entityStart;
+    console.log(`✅ Entity extraction completed in ${entityTime}ms:`, {
+      count: entities.length,
+      types: [...new Set(entities.map(e => e.type))]
+    });
 
-    // Step 3: Store conversation via MCP
-    console.log('📝 Storing conversation via MCP...');
+    // Steps 3 & 4: Store data (can be done in parallel)
+    console.log('🔄 Step 3/4: Storing conversation and entities...');
+    const storageStart = Date.now();
+    
+    // Store conversation first to get ID
     const conversationResult = await mcpService.storeConversation({
       transcription,
       audio_duration: audioDuration,
       metadata: {
         provider: 'openai',
         processedAt: new Date().toISOString(),
-        entityCount: entities.length
+        entityCount: entities.length,
+        audioSize: req.file.buffer.length,
+        audioFormat: req.file.mimetype,
+        processingTimes: {
+          transcription: transcriptionTime,
+          entityExtraction: entityTime
+        }
       }
     });
 
-    // Step 4: Store entities via MCP
+    // Store entities if we have conversation ID and entities
     if (entities.length > 0 && conversationResult.conversationId) {
-      for (const entity of entities) {
-        console.log(`📋 Storing entity via MCP: ${entity.type} - ${entity.value}`);
-        await mcpService.storeEntity({
+      console.log('🔄 Step 4/4: Storing extracted entities...');
+      const entityPromises = entities.map(entity => 
+        mcpService.storeEntity({
           type: entity.type,
           value: entity.value,
           confidence: entity.confidence,
           context: entity.context,
-          source_conversation_id: conversationResult.conversationId,
+          source_conversation_id: conversationResult.conversationId!,
           metadata: {
             provider: 'openai',
             extractedAt: new Date().toISOString()
           }
-        });
-      }
+        })
+      );
+      
+      // Store all entities in parallel
+      await Promise.all(entityPromises);
     }
+
+    const storageTime = Date.now() - storageStart;
+    const totalTime = Date.now() - startTime;
+    
+    console.log(`✅ Complete pipeline finished in ${totalTime}ms:`, {
+      transcription: `${transcriptionTime}ms`,
+      entityExtraction: `${entityTime}ms`, 
+      storage: `${storageTime}ms`,
+      total: `${totalTime}ms`
+    });
 
     const response: ApiResponse = {
       success: true,
@@ -166,17 +203,27 @@ router.post('/process-audio', aiLimiter, upload.single('audio'), async (req: Req
         transcription,
         entities,
         conversationId: conversationResult.conversationId,
-        processedAt: new Date().toISOString()
+        processedAt: new Date().toISOString(),
+        performance: {
+          totalProcessingTime: totalTime,
+          transcriptionTime,
+          entityExtractionTime: entityTime,
+          storageTime
+        }
       }
     };
     
     res.json(response);
   } catch (error) {
-    console.error('Audio processing error:', error);
+    const errorTime = Date.now() - startTime;
+    console.error(`❌ Audio processing failed after ${errorTime}ms:`, error);
+    
     const errorResponse: ApiResponse = {
       success: false,
       error: 'Audio processing failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? 
+        `${error.message} (failed after ${errorTime}ms)` : 
+        `Unknown error (failed after ${errorTime}ms)`
     };
     res.status(500).json(errorResponse);
   }
