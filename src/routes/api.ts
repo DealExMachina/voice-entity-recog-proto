@@ -187,7 +187,7 @@ router.post('/process-audio', aiLimiter, upload.single('audio'), async (req: Req
 router.post('/extract-entities', aiLimiter, async (req: Request, res: Response) => {
   try {
     const { text } = req.body as { text?: string };
-    const { mastraAgent } = req.app.locals;
+    const { mastraAgent, mcpService } = req.app.locals;
     
     if (!text) {
       return res.status(400).json({ 
@@ -196,15 +196,50 @@ router.post('/extract-entities', aiLimiter, async (req: Request, res: Response) 
       } as ApiResponse);
     }
 
+    console.log('🔍 Extracting entities from text input...');
     const entities = await mastraAgent.extractEntities(text);
     const analysis = await mastraAgent.analyzeEntities(entities);
+
+    // Store conversation via MCP (similar to audio processing)
+    console.log('📝 Storing text conversation via MCP...');
+    const conversationResult = await mcpService.storeConversation({
+      transcription: text, // Use input text as "transcription"
+      audio_duration: 0, // No audio duration for text input
+      metadata: {
+        provider: mastraAgent.getProviderStatus().current,
+        processedAt: new Date().toISOString(),
+        entityCount: entities.length,
+        inputType: 'text' // Mark this as text input
+      }
+    });
+
+    // Store entities via MCP
+    if (entities.length > 0 && conversationResult.conversationId) {
+      for (const entity of entities) {
+        console.log(`📋 Storing entity via MCP: ${entity.type} - ${entity.value}`);
+        await mcpService.storeEntity({
+          type: entity.type,
+          value: entity.value,
+          confidence: entity.confidence,
+          context: entity.context,
+          source_conversation_id: conversationResult.conversationId,
+          metadata: {
+            provider: mastraAgent.getProviderStatus().current,
+            extractedAt: new Date().toISOString(),
+            inputType: 'text'
+          }
+        });
+      }
+    }
 
     const response: ApiResponse = {
       success: true,
       data: {
         text,
         entities,
-        analysis
+        analysis,
+        conversationId: conversationResult.conversationId,
+        processedAt: new Date().toISOString()
       }
     };
     

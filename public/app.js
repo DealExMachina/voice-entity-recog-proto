@@ -558,6 +558,9 @@ class MastraVoiceApp {
                 this.displayEntities(result.entities);
                 this.displayAnalysis(result.analysis);
                 
+                // Refresh database entities to show newly stored entities
+                await this.loadDatabaseEntities();
+                
                 // Show success with provider info
                 const providerInfo = provider === 'demo' ? 'Demo Mode' : 
                                    provider === 'openai' ? 'OpenAI' : 'Mistral AI';
