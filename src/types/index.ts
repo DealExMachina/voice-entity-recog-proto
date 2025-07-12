@@ -92,6 +92,11 @@ export type WebSocketMessageType =
   | 'voice_data' 
   | 'entities_extracted' 
   | 'transcription_complete'
+  | 'start_streaming'
+  | 'streaming_started'
+  | 'transcription_chunk'
+  | 'end_streaming'
+  | 'streaming_error'
   | 'error'
   | 'ping'
   | 'pong';
@@ -100,6 +105,9 @@ export interface VoiceDataMessage {
   type: 'voice_data';
   audio: string; // base64 encoded
   format?: string;
+  sessionId?: string;
+  chunkIndex?: number;
+  isFinal?: boolean;
 }
 
 export interface EntitiesExtractedMessage {
@@ -107,6 +115,33 @@ export interface EntitiesExtractedMessage {
   transcription: string;
   entities: ExtractedEntity[];
   conversationId: string;
+}
+
+export interface StreamingStartedMessage {
+  type: 'streaming_started';
+  sessionId: string;
+}
+
+export interface TranscriptionChunkMessage {
+  type: 'transcription_chunk';
+  transcription: string;
+  isFinal: boolean;
+}
+
+export interface StreamingErrorMessage {
+  type: 'streaming_error';
+  error: string;
+}
+
+export interface StartStreamingMessage {
+  type: 'start_streaming';
+  provider: string;
+  audioFormat: string;
+}
+
+export interface EndStreamingMessage {
+  type: 'end_streaming';
+  sessionId: string;
 }
 
 // Database Types
