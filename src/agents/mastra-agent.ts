@@ -472,6 +472,86 @@ EXAMPLE OUTPUT FORMAT:
   }
 
   getEntityTypes(): EntityType[] {
-    return [...this.entityTypes];
+    return this.entityTypes;
+  }
+
+  async generateResponse(input: string, personaId?: string): Promise<{
+    text: string;
+    entities: ExtractedEntity[];
+    confidence: number;
+    responseTime: number;
+    personaUsed: string;
+  }> {
+    const startTime = Date.now();
+    
+    try {
+      let responseText: string;
+      let personaUsed = 'default';
+      
+      if (this.aiProvider === 'openai' && this.openai) {
+        // Get persona context if available
+        let personaContext = '';
+        if (personaId) {
+          // In a real implementation, you'd fetch persona details from database
+          personaContext = `You are a helpful AI assistant. Respond in a conversational manner.`;
+        }
+        
+        const prompt = `${personaContext}\n\nUser: ${input}\n\nAssistant:`;
+        
+        const completion = await this.openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: personaContext || 'You are a helpful AI assistant. Respond naturally and conversationally.'
+            },
+            {
+              role: 'user',
+              content: input
+            }
+          ],
+          max_tokens: 500,
+          temperature: 0.7
+        });
+        
+        responseText = completion.choices[0]?.message?.content || 'I apologize, but I couldn\'t generate a response.';
+        personaUsed = personaId || 'openai-default';
+        
+      } else if (this.aiProvider === 'mistral' && this.mistral) {
+        // Mistral implementation - using demo mode for now
+        responseText = `Thank you for your message: "${input}". This is a Mistral AI demo response. In a real implementation, I would provide a more detailed and contextual reply.`;
+        personaUsed = personaId || 'mistral-default';
+        
+      } else {
+        // Demo mode
+        responseText = `Thank you for your message: "${input}". This is a demo response. In a real implementation, I would provide a more detailed and contextual reply based on your input and any configured persona.`;
+        personaUsed = personaId || 'demo-default';
+      }
+      
+      // Extract entities from the response
+      const entities = await this.extractEntities(responseText);
+      
+      const responseTime = Date.now() - startTime;
+      
+      return {
+        text: responseText,
+        entities,
+        confidence: 0.9, // High confidence for generated responses
+        responseTime,
+        personaUsed
+      };
+      
+    } catch (error) {
+      console.error('Response generation error:', error);
+      const responseTime = Date.now() - startTime;
+      
+      return {
+        text: 'I apologize, but I encountered an error while generating a response. Please try again.',
+        entities: [],
+        confidence: 0.0,
+        responseTime,
+        personaUsed: personaId || 'error'
+      };
+    }
   }
 } 

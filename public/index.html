@@ -197,29 +197,172 @@
                         <i data-lucide="type" class="w-4 h-4"></i>
                         <span>Text Input</span>
                     </button>
+                    <!-- Agent Configuration Toggle -->
+                    <button id="agentConfigToggle" class="btn-primary text-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                        <i data-lucide="settings" class="w-4 h-4"></i>
+                        <span>Agent Config</span>
+                    </button>
                 </div>
 
                 <!-- Text Input Area (hidden by default) -->
-                <div id="textInputArea" class="mt-6 w-full max-w-2xl" style="display: none;">
-                    <textarea id="textInput" placeholder="Enter text for entity extraction..." 
-                        class="w-full p-4 border border-slate-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent bg-white/50 backdrop-blur-sm text-slate-700 placeholder-slate-400" rows="3"></textarea>
-                    <div class="flex justify-center mt-4">
-                        <button id="processBtn" class="btn-primary text-slate-600 px-6 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
-                            <i data-lucide="zap" class="w-4 h-4"></i>
-                            <span>Extract Entities</span>
-                        </button>
+                <div id="textInputArea" class="mt-6 hidden">
+                    <div class="max-w-2xl mx-auto">
+                        <textarea id="textInput" placeholder="Enter text to extract entities..." class="w-full p-4 border border-slate-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent" rows="4"></textarea>
+                        <button id="processBtn" class="mt-3 btn-primary text-slate-600 px-6 py-2 rounded-lg text-sm font-medium">Extract Entities</button>
+                    </div>
+                </div>
+
+                <!-- Agent Configuration Panel (hidden by default) -->
+                <div id="agentConfigPanel" class="mt-6 hidden">
+                    <div class="max-w-4xl mx-auto bg-white/70 backdrop-blur-sm rounded-lg p-6 border border-slate-200/50">
+                        <h3 class="text-lg font-medium text-slate-800 mb-4">Agent Persona Configuration</h3>
+                        
+                        <!-- Persona Selection -->
+                        <div class="mb-6">
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Select Persona</label>
+                            <select id="personaSelect" class="w-full p-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200">
+                                <option value="">Default Persona</option>
+                            </select>
+                            <div class="mt-2 flex space-x-2">
+                                <button id="createPersonaBtn" class="text-sm text-blue-600 hover:text-blue-700">Create New</button>
+                                <button id="editPersonaBtn" class="text-sm text-green-600 hover:text-green-700">Edit Selected</button>
+                                <button id="deletePersonaBtn" class="text-sm text-red-600 hover:text-red-700">Delete</button>
+                            </div>
+                        </div>
+
+                        <!-- Persona Form -->
+                        <div id="personaForm" class="hidden">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <!-- Basic Info -->
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-2">Name</label>
+                                    <input type="text" id="personaName" class="w-full p-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200">
+                                    
+                                    <label class="block text-sm font-medium text-slate-700 mb-2 mt-4">Description</label>
+                                    <textarea id="personaDescription" rows="3" class="w-full p-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200"></textarea>
+                                </div>
+
+                                <!-- Voice Configuration -->
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-2">Voice</label>
+                                    <select id="voiceProvider" class="w-full p-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200 mb-3">
+                                        <option value="openai">OpenAI</option>
+                                        <option value="demo">Demo</option>
+                                    </select>
+                                    
+                                    <select id="voiceType" class="w-full p-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200 mb-3">
+                                        <option value="alloy">Alloy</option>
+                                        <option value="echo">Echo</option>
+                                        <option value="fable">Fable</option>
+                                        <option value="onyx">Onyx</option>
+                                        <option value="nova">Nova</option>
+                                        <option value="shimmer">Shimmer</option>
+                                    </select>
+
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="block text-sm font-medium text-slate-700 mb-1">Speed</label>
+                                            <input type="range" id="voiceSpeed" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full">
+                                            <span id="speedValue" class="text-xs text-slate-500">1.0</span>
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-slate-700 mb-1">Volume</label>
+                                            <input type="range" id="voiceVolume" min="0" max="1" step="0.1" value="1.0" class="w-full">
+                                            <span id="volumeValue" class="text-xs text-slate-500">1.0</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Personality Configuration -->
+                            <div class="mt-6">
+                                <h4 class="text-md font-medium text-slate-800 mb-3">Personality</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-slate-700 mb-2">Tone</label>
+                                        <select id="personalityTone" class="w-full p-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200">
+                                            <option value="professional">Professional</option>
+                                            <option value="friendly">Friendly</option>
+                                            <option value="casual">Casual</option>
+                                            <option value="formal">Formal</option>
+                                            <option value="enthusiastic">Enthusiastic</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-slate-700 mb-2">Style</label>
+                                        <select id="personalityStyle" class="w-full p-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200">
+                                            <option value="conversational">Conversational</option>
+                                            <option value="technical">Technical</option>
+                                            <option value="educational">Educational</option>
+                                            <option value="persuasive">Persuasive</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-slate-700 mb-2">Response Length</label>
+                                        <select id="responseLength" class="w-full p-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200">
+                                            <option value="short">Short</option>
+                                            <option value="medium">Medium</option>
+                                            <option value="long">Long</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Expertise -->
+                            <div class="mt-6">
+                                <label class="block text-sm font-medium text-slate-700 mb-2">Areas of Expertise (comma-separated)</label>
+                                <input type="text" id="personaExpertise" placeholder="sales, customer service, technical support" class="w-full p-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-200">
+                            </div>
+
+                            <!-- Form Actions -->
+                            <div class="mt-6 flex space-x-3">
+                                <button id="savePersonaBtn" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Persona</button>
+                                <button id="cancelPersonaBtn" class="px-6 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300">Cancel</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- Transcription Box -->
-            <div id="transcriptionPanel" class="glass-effect rounded-2xl p-6 shadow-sm fade-in mb-8" style="display: none;">
-                <div class="flex items-center space-x-3 mb-4">
-                    <i data-lucide="message-square" class="w-5 h-5 text-slate-600"></i>
-                    <h2 class="text-lg font-medium text-slate-700">Transcription</h2>
+            <div id="transcriptionPanel" class="mt-8 max-w-4xl mx-auto hidden">
+                <div class="bg-white/70 backdrop-blur-sm rounded-lg p-6 border border-slate-200/50">
+                    <h3 class="text-lg font-medium text-slate-800 mb-4 flex items-center">
+                        <i data-lucide="file-text" class="w-5 h-5 mr-2"></i>
+                        Transcription
+                    </h3>
+                    <div id="transcriptionText" class="text-slate-700 leading-relaxed"></div>
                 </div>
-                <div id="transcriptionText" class="transcript-box bg-gradient-to-br from-slate-50 to-stone-50 p-6 rounded-xl border border-slate-100 italic text-slate-600 font-light leading-relaxed">
-                    <!-- Transcription will appear here -->
+            </div>
+
+            <!-- Agent Response Area -->
+            <div id="agentResponsePanel" class="mt-8 max-w-4xl mx-auto hidden">
+                <div class="bg-white/70 backdrop-blur-sm rounded-lg p-6 border border-slate-200/50">
+                    <h3 class="text-lg font-medium text-slate-800 mb-4 flex items-center">
+                        <i data-lucide="bot" class="w-5 h-5 mr-2"></i>
+                        Agent Response
+                    </h3>
+                    <div id="agentResponseText" class="text-slate-700 leading-relaxed mb-4"></div>
+                    
+                    <!-- TTS Controls -->
+                    <div id="ttsControls" class="flex items-center space-x-4">
+                        <button id="playResponseBtn" class="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                            <i data-lucide="play" class="w-4 h-4"></i>
+                            <span>Play Response</span>
+                        </button>
+                        <button id="stopResponseBtn" class="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 hidden">
+                            <i data-lucide="square" class="w-4 h-4"></i>
+                            <span>Stop</span>
+                        </button>
+                        <div class="flex items-center space-x-2">
+                            <i data-lucide="volume-2" class="w-4 h-4 text-slate-500"></i>
+                            <input type="range" id="responseVolume" min="0" max="1" step="0.1" value="0.7" class="w-20">
+                        </div>
+                        <span id="responseDuration" class="text-sm text-slate-500">0:00</span>
+                    </div>
+                    
+                    <!-- Response Entities -->
+                    <div id="responseEntities" class="mt-4"></div>
                 </div>
             </div>
         </div>

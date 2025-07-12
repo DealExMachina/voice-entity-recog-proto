@@ -10,12 +10,18 @@ import { fileURLToPath } from 'url';
 import { initializeDatabase } from './database/duckdb.js';
 import { MastraAgent } from './agents/mastra-agent.js';
 import { McpService } from './services/mcp-service.js';
+import { TTSService } from './services/tts-service.js';
 import { generalLimiter, healthLimiter } from './middleware/rateLimiter.js';
 import apiRoutes from './routes/api.js';
 import type { 
   WebSocketMessage, 
   VoiceDataMessage, 
-  EntitiesExtractedMessage 
+  EntitiesExtractedMessage,
+  StreamingStartedMessage,
+  TranscriptionChunkMessage,
+  StreamingErrorMessage,
+  StartStreamingMessage,
+  EndStreamingMessage
 } from './types/index.js';
 
 dotenv.config();
@@ -87,6 +93,7 @@ app.use('/api', generalLimiter);
 // Initialize services
 let mastraAgent: MastraAgent;
 let mcpService: McpService;
+let ttsService: TTSService;
 let serverReady = false; // Flag to track when server is completely ready
 
 async function initializeServices(): Promise<void> {
@@ -105,9 +112,15 @@ async function initializeServices(): Promise<void> {
     await mastraAgent.initialize();
     console.log('✅ Mastra agent initialized');
 
+    // Initialize TTS service
+    ttsService = new TTSService();
+    await ttsService.initialize();
+    console.log('✅ TTS service initialized');
+
     // Make services available to routes
     app.locals.mastraAgent = mastraAgent;
     app.locals.mcpService = mcpService;
+    app.locals.ttsService = ttsService;
 
   } catch (error) {
     console.error('❌ Failed to initialize services:', error);
@@ -119,11 +132,134 @@ async function initializeServices(): Promise<void> {
 wss.on('connection', (ws: WebSocket) => {
   console.log('📡 New WebSocket connection');
   
+  // Track streaming sessions
+  const streamingSessions = new Map<string, {
+    audioChunks: Buffer[];
+    transcription: string;
+    startTime: number;
+    provider: string;
+  }>();
+  
   ws.on('message', async (message: any) => {
     try {
       const data = JSON.parse(message.toString()) as WebSocketMessage;
       
-      if (data.type === 'voice_data') {
+      if (data.type === 'start_streaming') {
+        // Initialize a new streaming session
+        const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        streamingSessions.set(sessionId, {
+          audioChunks: [],
+          transcription: '',
+          startTime: Date.now(),
+          provider: (data as StartStreamingMessage).provider || 'openai'
+        });
+        
+        // Send session confirmation
+        const response: StreamingStartedMessage = {
+          type: 'streaming_started',
+          sessionId
+        };
+        ws.send(JSON.stringify(response));
+        console.log('🎬 Streaming session started:', sessionId);
+        
+      } else if (data.type === 'voice_data') {
+        const voiceData = data as VoiceDataMessage;
+        
+        if (voiceData.sessionId && streamingSessions.has(voiceData.sessionId)) {
+          const session = streamingSessions.get(voiceData.sessionId)!;
+          
+          // Decode and store audio chunk
+          const audioBuffer = Buffer.from(voiceData.audio, 'base64');
+          session.audioChunks.push(audioBuffer);
+          
+          // Process audio chunk for real-time transcription
+          if (session.audioChunks.length >= 2) { // Process after we have enough chunks
+            try {
+              // Combine recent chunks for processing
+              const recentChunks = session.audioChunks.slice(-4); // Last 4 chunks (1 second at 250ms chunks)
+              const combinedAudio = Buffer.concat(recentChunks);
+              
+              // Get transcription for this chunk
+              const chunkTranscription = await mastraAgent.transcribe(combinedAudio);
+              
+              // Update session transcription
+              if (chunkTranscription && chunkTranscription.trim()) {
+                session.transcription = chunkTranscription;
+                
+                // Send partial transcription back to client
+                const transcriptionResponse: TranscriptionChunkMessage = {
+                  type: 'transcription_chunk',
+                  transcription: session.transcription,
+                  isFinal: false
+                };
+                ws.send(JSON.stringify(transcriptionResponse));
+              }
+            } catch (error) {
+              console.error('Chunk transcription error:', error);
+            }
+          }
+        }
+        
+      } else if (data.type === 'end_streaming') {
+        const endData = data as EndStreamingMessage;
+        
+        if (endData.sessionId && streamingSessions.has(endData.sessionId)) {
+          const session = streamingSessions.get(endData.sessionId)!;
+          
+          try {
+            // Combine all audio chunks for final processing
+            const fullAudio = Buffer.concat(session.audioChunks);
+            
+            // Get final transcription
+            const finalTranscription = await mastraAgent.transcribe(fullAudio);
+            
+            // Extract entities from final transcription
+            const entities = await mastraAgent.extractEntities(finalTranscription);
+            
+            // Store conversation via MCP
+            const conversationResult = await mcpService.storeConversation({
+              transcription: finalTranscription,
+              audio_duration: (Date.now() - session.startTime) / 1000,
+              metadata: {
+                provider: session.provider,
+                processedAt: new Date().toISOString(),
+                entityCount: entities.length,
+                streamingSession: true
+              }
+            });
+
+            // Store entities if we have a conversation ID
+            if (conversationResult.conversationId) {
+              await mcpService.storeEntities(entities, conversationResult.conversationId);
+            }
+            
+            // Send final results back to client
+            const finalResponse: EntitiesExtractedMessage = {
+              type: 'entities_extracted',
+              transcription: finalTranscription,
+              entities,
+              conversationId: conversationResult.conversationId || ''
+            };
+            
+            ws.send(JSON.stringify(finalResponse));
+            
+            // Clean up session
+            streamingSessions.delete(endData.sessionId);
+            console.log('✅ Streaming session completed:', endData.sessionId);
+            
+          } catch (error) {
+            console.error('Final processing error:', error);
+            const errorResponse: StreamingErrorMessage = {
+              type: 'streaming_error',
+              error: error instanceof Error ? error.message : 'Unknown streaming error'
+            };
+            ws.send(JSON.stringify(errorResponse));
+            streamingSessions.delete(endData.sessionId);
+          }
+        }
+        
+      } else if (data.type === 'voice_data') {
+        // Legacy voice data handling (fallback)
         const voiceData = data as VoiceDataMessage;
         
         // Handle real-time voice data
@@ -169,6 +305,8 @@ wss.on('connection', (ws: WebSocket) => {
 
   ws.on('close', () => {
     console.log('📡 WebSocket connection closed');
+    // Clean up any active streaming sessions for this connection
+    streamingSessions.clear();
   });
 });
 

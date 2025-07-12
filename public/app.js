@@ -6,6 +6,12 @@ class MastraVoiceApp {
         this.mediaRecorder = null;
         this.currentAiProvider = 'openai'; // Set default fallback value
         this.ws = null;
+        this.streamingSessionId = null;
+        this.transcriptionBuffer = '';
+        this.isStreamingTranscription = false;
+        this.currentPersonaId = null;
+        this.currentAgentResponse = null;
+        this.currentAudio = null;
         
         // Initialize app asynchronously without blocking
         this.initializeApp().catch(error => {
@@ -86,6 +92,50 @@ class MastraVoiceApp {
             this.toggleTextInput();
         });
 
+        // Agent configuration toggle
+        document.getElementById('agentConfigToggle').addEventListener('click', () => {
+            this.toggleAgentConfig();
+        });
+
+        // Persona management
+        document.getElementById('createPersonaBtn').addEventListener('click', () => {
+            this.createNewPersona();
+        });
+
+        document.getElementById('editPersonaBtn').addEventListener('click', () => {
+            this.editSelectedPersona();
+        });
+
+        document.getElementById('deletePersonaBtn').addEventListener('click', () => {
+            this.deleteSelectedPersona();
+        });
+
+        document.getElementById('savePersonaBtn').addEventListener('click', () => {
+            this.savePersona();
+        });
+
+        document.getElementById('cancelPersonaBtn').addEventListener('click', () => {
+            this.cancelPersonaEdit();
+        });
+
+        // TTS controls
+        document.getElementById('playResponseBtn').addEventListener('click', () => {
+            this.playAgentResponse();
+        });
+
+        document.getElementById('stopResponseBtn').addEventListener('click', () => {
+            this.stopAgentResponse();
+        });
+
+        // Voice configuration
+        document.getElementById('voiceSpeed').addEventListener('input', (e) => {
+            document.getElementById('speedValue').textContent = e.target.value;
+        });
+
+        document.getElementById('voiceVolume').addEventListener('input', (e) => {
+            document.getElementById('volumeValue').textContent = e.target.value;
+        });
+
         // Audio upload (file input)
         document.getElementById('audioUpload').addEventListener('change', (e) => {
             if (e.target.files && e.target.files[0]) {
@@ -128,14 +178,53 @@ class MastraVoiceApp {
 
     handleWebSocketMessage(data) {
         switch (data.type) {
+            case 'streaming_started':
+                this.streamingSessionId = data.sessionId;
+                this.isStreamingTranscription = true;
+                console.log('🎬 Streaming session started:', data.sessionId);
+                break;
+                
+            case 'transcription_chunk':
+                this.handleTranscriptionChunk(data.transcription, data.isFinal);
+                break;
+                
             case 'entities_extracted':
                 this.displayTranscription(data.transcription);
                 this.displayEntities(data.entities);
                 this.showToast('Entities extracted successfully!');
+                this.isStreamingTranscription = false;
+                
+                // Generate agent response after entities are extracted
+                if (data.transcription) {
+                    this.generateAgentResponse(data.transcription);
+                }
                 break;
+                
+            case 'agent_response':
+                this.displayAgentResponse(data);
+                this.currentAgentResponse = data;
+                break;
+                
+            case 'streaming_error':
+                console.error('Streaming error:', data.error);
+                this.showToast(`Streaming error: ${data.error}`, 'error');
+                this.isStreamingTranscription = false;
+                break;
+                
             case 'error':
                 this.showToast(`Error: ${data.message}`, 'error');
                 break;
+        }
+    }
+
+    handleTranscriptionChunk(transcription, isFinal) {
+        if (isFinal) {
+            // Final chunk - update the complete transcription
+            this.transcriptionBuffer = transcription;
+            this.displayTranscription(transcription);
+        } else {
+            // Partial chunk - show with "..." to indicate it's in progress
+            this.displayTranscription(transcription + '...', true);
         }
     }
 
@@ -157,7 +246,9 @@ class MastraVoiceApp {
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
-                    sampleRate: 44100
+                    sampleRate: 16000, // Optimized for speech recognition
+                    channelCount: 1, // Mono for better compression
+                    autoGainControl: true
                 } 
             });
             
@@ -170,16 +261,13 @@ class MastraVoiceApp {
             this.showProcessingState('Setting up recording...');
             this.updateRecordingUI('preparing');
             
-            // Try different MIME types for better compatibility
+            // Optimize MIME type for streaming
             let mimeType = 'audio/webm;codecs=opus';
             if (!MediaRecorder.isTypeSupported(mimeType)) {
-                console.warn('WebM/Opus not supported, trying WebM/VP8...');
                 mimeType = 'audio/webm';
                 if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    console.warn('WebM not supported, trying MP4...');
                     mimeType = 'audio/mp4';
                     if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        console.warn('MP4 not supported, using default...');
                         mimeType = '';
                     }
                 }
@@ -197,7 +285,9 @@ class MastraVoiceApp {
             });
             
             this.audioChunks = [];
+            this.transcriptionBuffer = '';
             
+            // Optimized chunking for real-time streaming
             this.mediaRecorder.ondataavailable = (event) => {
                 console.log('📊 Data chunk received:', {
                     size: event.data.size,
@@ -205,12 +295,14 @@ class MastraVoiceApp {
                 });
                 if (event.data.size > 0) {
                     this.audioChunks.push(event.data);
+                    // Stream chunk immediately via WebSocket
+                    this.streamAudioChunk(event.data);
                 }
             };
             
             this.mediaRecorder.onstop = () => {
-                console.log('🛑 Recording stopped, processing...');
-                this.processRecording();
+                console.log('🛑 Recording stopped, finalizing...');
+                this.finalizeStreaming();
                 stream.getTracks().forEach(track => track.stop());
             };
             
@@ -218,6 +310,7 @@ class MastraVoiceApp {
                 console.error('🚨 MediaRecorder error:', event);
                 this.showToast('Recording error occurred', 'error');
                 this.hideProcessingState();
+                this.isStreamingTranscription = false;
             };
             
             // Add event listener for when recording actually starts
@@ -226,10 +319,13 @@ class MastraVoiceApp {
                 this.isRecording = true;
                 this.updateRecordingUI('recording');
                 this.startRecordingCountdown();
+                // Initialize streaming session
+                this.initializeStreamingSession();
             };
             
-            this.mediaRecorder.start(1000); // Collect data every second for better chunking
-            console.log('🎬 Starting MediaRecorder...');
+            // Use smaller chunks for more responsive streaming (250ms instead of 1000ms)
+            this.mediaRecorder.start(250);
+            console.log('🎬 Starting MediaRecorder with optimized chunking...');
             
         } catch (error) {
             console.error('Failed to start recording:', error);
@@ -239,7 +335,62 @@ class MastraVoiceApp {
         }
     }
 
+    async initializeStreamingSession() {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            const message = {
+                type: 'start_streaming',
+                provider: this.currentAiProvider,
+                audioFormat: this.mediaRecorder?.mimeType || 'audio/webm'
+            };
+            this.ws.send(JSON.stringify(message));
+        }
+    }
 
+    async streamAudioChunk(audioChunk) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN && this.isStreamingTranscription) {
+            try {
+                // Convert blob to base64 for WebSocket transmission
+                const arrayBuffer = await audioChunk.arrayBuffer();
+                const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+                
+                const message = {
+                    type: 'voice_data',
+                    audio: base64Audio,
+                    sessionId: this.streamingSessionId,
+                    chunkIndex: this.audioChunks.length - 1,
+                    isFinal: false
+                };
+                
+                this.ws.send(JSON.stringify(message));
+            } catch (error) {
+                console.error('Failed to stream audio chunk:', error);
+            }
+        }
+    }
+
+    async finalizeStreaming() {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN && this.streamingSessionId) {
+            const message = {
+                type: 'end_streaming',
+                sessionId: this.streamingSessionId
+            };
+            this.ws.send(JSON.stringify(message));
+        }
+        
+        this.isRecording = false;
+        this.isStreamingTranscription = false;
+        this.streamingSessionId = null;
+        
+        // Clear timer
+        if (this.recordingTimer) {
+            clearInterval(this.recordingTimer);
+            this.recordingTimer = null;
+        }
+        
+        // Update UI
+        this.updateRecordingUI('idle');
+        this.showProcessingState('Finalizing transcription...');
+    }
 
     startRecordingCountdown() {
         // Play audio notification to indicate recording started
@@ -591,11 +742,27 @@ class MastraVoiceApp {
         document.getElementById('recordingStatus').textContent = '';
     }
 
-    displayTranscription(transcription) {
+    displayTranscription(transcription, isPartial = false) {
         const panel = document.getElementById('transcriptionPanel');
         const textDiv = document.getElementById('transcriptionText');
         
-        textDiv.textContent = transcription;
+        if (isPartial) {
+            // For partial transcriptions, show with streaming indicator
+            textDiv.innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <span>${transcription}</span>
+                    <div class="flex space-x-1">
+                        <div class="w-1 h-1 bg-blue-500 rounded-full animate-pulse"></div>
+                        <div class="w-1 h-1 bg-blue-500 rounded-full animate-pulse" style="animation-delay: 0.2s"></div>
+                        <div class="w-1 h-1 bg-blue-500 rounded-full animate-pulse" style="animation-delay: 0.4s"></div>
+                    </div>
+                </div>
+            `;
+        } else {
+            // For final transcriptions, show clean text
+            textDiv.textContent = transcription;
+        }
+        
         panel.style.display = 'block';
         
         // Smooth scroll to results
@@ -1045,19 +1212,342 @@ class MastraVoiceApp {
     }
 
     async handleAudioFile(file) {
-        console.log('📁 Audio file selected:', {
-            name: file.name,
-            size: file.size,
-            type: file.type
-        });
+        try {
+            this.showProcessingState('Processing uploaded file...');
+            await this.uploadAudio(file, file.name);
+        } catch (error) {
+            console.error('File handling error:', error);
+            this.showToast(`File processing failed: ${error.message}`, 'error');
+        }
+    }
+
+    // Persona Management Methods
+    async toggleAgentConfig() {
+        const panel = document.getElementById('agentConfigPanel');
+        const isVisible = !panel.classList.contains('hidden');
         
-        if (!file.type.startsWith('audio/')) {
-            this.showToast('Please select a valid audio file', 'error');
+        if (!isVisible) {
+            panel.classList.remove('hidden');
+            await this.loadPersonas();
+        } else {
+            panel.classList.add('hidden');
+        }
+    }
+
+    async loadPersonas() {
+        try {
+            const response = await fetch('/api/personas');
+            const result = await response.json();
+            
+            if (result.success) {
+                this.populatePersonaSelect(result.data.personas);
+            } else {
+                console.error('Failed to load personas:', result.error);
+            }
+        } catch (error) {
+            console.error('Load personas error:', error);
+        }
+    }
+
+    populatePersonaSelect(personas) {
+        const select = document.getElementById('personaSelect');
+        select.innerHTML = '<option value="">Default Persona</option>';
+        
+        personas.forEach(persona => {
+            const option = document.createElement('option');
+            option.value = persona.id;
+            option.textContent = persona.name;
+            select.appendChild(option);
+        });
+    }
+
+    createNewPersona() {
+        this.showPersonaForm();
+        this.clearPersonaForm();
+        this.currentPersonaId = null;
+    }
+
+    async editSelectedPersona() {
+        const select = document.getElementById('personaSelect');
+        const personaId = select.value;
+        
+        if (!personaId) {
+            this.showToast('Please select a persona to edit', 'error');
             return;
         }
         
-        this.showProcessingState('Processing uploaded audio file...');
-        await this.uploadAudio(file, file.name);
+        try {
+            const response = await fetch(`/api/personas/${personaId}`);
+            const result = await response.json();
+            
+            if (result.success) {
+                this.populatePersonaForm(result.data.persona);
+                this.currentPersonaId = personaId;
+                this.showPersonaForm();
+            } else {
+                this.showToast('Failed to load persona', 'error');
+            }
+        } catch (error) {
+            console.error('Edit persona error:', error);
+            this.showToast('Failed to load persona', 'error');
+        }
+    }
+
+    async deleteSelectedPersona() {
+        const select = document.getElementById('personaSelect');
+        const personaId = select.value;
+        
+        if (!personaId) {
+            this.showToast('Please select a persona to delete', 'error');
+            return;
+        }
+        
+        if (!confirm('Are you sure you want to delete this persona?')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/personas/${personaId}`, {
+                method: 'DELETE'
+            });
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showToast('Persona deleted successfully');
+                await this.loadPersonas();
+            } else {
+                this.showToast('Failed to delete persona', 'error');
+            }
+        } catch (error) {
+            console.error('Delete persona error:', error);
+            this.showToast('Failed to delete persona', 'error');
+        }
+    }
+
+    async savePersona() {
+        const personaData = this.getPersonaFormData();
+        
+        if (!personaData.name) {
+            this.showToast('Persona name is required', 'error');
+            return;
+        }
+        
+        try {
+            const url = this.currentPersonaId ? `/api/personas/${this.currentPersonaId}` : '/api/personas';
+            const method = this.currentPersonaId ? 'PUT' : 'POST';
+            
+            const response = await fetch(url, {
+                method,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(personaData)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showToast('Persona saved successfully');
+                this.hidePersonaForm();
+                await this.loadPersonas();
+            } else {
+                this.showToast('Failed to save persona', 'error');
+            }
+        } catch (error) {
+            console.error('Save persona error:', error);
+            this.showToast('Failed to save persona', 'error');
+        }
+    }
+
+    cancelPersonaEdit() {
+        this.hidePersonaForm();
+        this.currentPersonaId = null;
+    }
+
+    showPersonaForm() {
+        document.getElementById('personaForm').classList.remove('hidden');
+    }
+
+    hidePersonaForm() {
+        document.getElementById('personaForm').classList.add('hidden');
+    }
+
+    clearPersonaForm() {
+        document.getElementById('personaName').value = '';
+        document.getElementById('personaDescription').value = '';
+        document.getElementById('voiceProvider').value = 'openai';
+        document.getElementById('voiceType').value = 'alloy';
+        document.getElementById('voiceSpeed').value = '1.0';
+        document.getElementById('voiceVolume').value = '1.0';
+        document.getElementById('personalityTone').value = 'professional';
+        document.getElementById('personalityStyle').value = 'conversational';
+        document.getElementById('responseLength').value = 'medium';
+        document.getElementById('personaExpertise').value = '';
+        
+        document.getElementById('speedValue').textContent = '1.0';
+        document.getElementById('volumeValue').textContent = '1.0';
+    }
+
+    populatePersonaForm(persona) {
+        document.getElementById('personaName').value = persona.name;
+        document.getElementById('personaDescription').value = persona.description;
+        
+        const voice = persona.voice;
+        document.getElementById('voiceProvider').value = voice.provider;
+        document.getElementById('voiceType').value = voice.voice;
+        document.getElementById('voiceSpeed').value = voice.speed;
+        document.getElementById('voiceVolume').value = voice.volume;
+        
+        const personality = persona.personality;
+        document.getElementById('personalityTone').value = personality.tone;
+        document.getElementById('personalityStyle').value = personality.style;
+        document.getElementById('responseLength').value = personality.responseLength;
+        document.getElementById('personaExpertise').value = persona.expertise.join(', ');
+        
+        document.getElementById('speedValue').textContent = voice.speed;
+        document.getElementById('volumeValue').textContent = voice.volume;
+    }
+
+    getPersonaFormData() {
+        return {
+            name: document.getElementById('personaName').value,
+            description: document.getElementById('personaDescription').value,
+            voice: {
+                provider: document.getElementById('voiceProvider').value,
+                voice: document.getElementById('voiceType').value,
+                language: 'en',
+                speed: parseFloat(document.getElementById('voiceSpeed').value),
+                pitch: 0,
+                volume: parseFloat(document.getElementById('voiceVolume').value)
+            },
+            personality: {
+                tone: document.getElementById('personalityTone').value,
+                style: document.getElementById('personalityStyle').value,
+                traits: [],
+                responseLength: document.getElementById('responseLength').value
+            },
+            expertise: document.getElementById('personaExpertise').value.split(',').map(s => s.trim()).filter(s => s)
+        };
+    }
+
+    // TTS Methods
+    async playAgentResponse() {
+        const audioUrl = this.currentAgentResponse?.audioUrl;
+        if (!audioUrl) {
+            this.showToast('No audio response available', 'error');
+            return;
+        }
+        
+        try {
+            const audio = new Audio(audioUrl);
+            audio.volume = parseFloat(document.getElementById('responseVolume').value);
+            
+            audio.addEventListener('loadedmetadata', () => {
+                const duration = Math.floor(audio.duration);
+                const minutes = Math.floor(duration / 60);
+                const seconds = duration % 60;
+                document.getElementById('responseDuration').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            });
+            
+            audio.addEventListener('play', () => {
+                document.getElementById('playResponseBtn').classList.add('hidden');
+                document.getElementById('stopResponseBtn').classList.remove('hidden');
+            });
+            
+            audio.addEventListener('ended', () => {
+                document.getElementById('playResponseBtn').classList.remove('hidden');
+                document.getElementById('stopResponseBtn').classList.add('hidden');
+            });
+            
+            this.currentAudio = audio;
+            await audio.play();
+            
+        } catch (error) {
+            console.error('Audio playback error:', error);
+            this.showToast('Failed to play audio response', 'error');
+        }
+    }
+
+    stopAgentResponse() {
+        if (this.currentAudio) {
+            this.currentAudio.pause();
+            this.currentAudio.currentTime = 0;
+            document.getElementById('playResponseBtn').classList.remove('hidden');
+            document.getElementById('stopResponseBtn').classList.add('hidden');
+        }
+    }
+
+    async generateAgentResponse(input) {
+        try {
+            const personaId = document.getElementById('personaSelect').value;
+            
+            const response = await fetch('/api/agent/respond', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    text: input,
+                    personaId: personaId || undefined,
+                    includeAudio: true
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.displayAgentResponse(result.data);
+                this.currentAgentResponse = result.data;
+            } else {
+                throw new Error(result.message || 'Failed to generate response');
+            }
+            
+        } catch (error) {
+            console.error('Agent response error:', error);
+            this.showToast(`Failed to generate response: ${error.message}`, 'error');
+        }
+    }
+
+    displayAgentResponse(response) {
+        const panel = document.getElementById('agentResponsePanel');
+        const textDiv = document.getElementById('agentResponseText');
+        const entitiesDiv = document.getElementById('responseEntities');
+        
+        textDiv.textContent = response.text;
+        panel.classList.remove('hidden');
+        
+        // Display entities if any
+        if (response.entities && response.entities.length > 0) {
+            this.displayResponseEntities(response.entities, entitiesDiv);
+        } else {
+            entitiesDiv.innerHTML = '';
+        }
+        
+        // Show TTS controls if audio is available
+        const ttsControls = document.getElementById('ttsControls');
+        if (response.audioUrl) {
+            ttsControls.classList.remove('hidden');
+        } else {
+            ttsControls.classList.add('hidden');
+        }
+        
+        // Smooth scroll to response
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    displayResponseEntities(entities, container) {
+        const entitiesHtml = entities.map((entity, index) => `
+            <div class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-${this.getEntityColor(entity.type)}-100 text-${this.getEntityColor(entity.type)}-700 mr-2 mb-2">
+                ${this.getEntityIcon(entity.type)} ${entity.type}: ${entity.value}
+            </div>
+        `).join('');
+        
+        container.innerHTML = `
+            <div class="flex flex-wrap">
+                ${entitiesHtml}
+            </div>
+        `;
+        lucide.createIcons();
     }
 }
 
