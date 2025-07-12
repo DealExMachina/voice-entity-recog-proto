@@ -6,6 +6,9 @@ class MastraVoiceApp {
         this.mediaRecorder = null;
         this.currentAiProvider = 'openai'; // Set default fallback value
         this.ws = null;
+        this.streamingSessionId = null;
+        this.transcriptionBuffer = '';
+        this.isStreamingTranscription = false;
         
         // Initialize app asynchronously without blocking
         this.initializeApp().catch(error => {
@@ -128,14 +131,43 @@ class MastraVoiceApp {
 
     handleWebSocketMessage(data) {
         switch (data.type) {
+            case 'streaming_started':
+                this.streamingSessionId = data.sessionId;
+                this.isStreamingTranscription = true;
+                console.log('🎬 Streaming session started:', data.sessionId);
+                break;
+                
+            case 'transcription_chunk':
+                this.handleTranscriptionChunk(data.transcription, data.isFinal);
+                break;
+                
             case 'entities_extracted':
                 this.displayTranscription(data.transcription);
                 this.displayEntities(data.entities);
                 this.showToast('Entities extracted successfully!');
+                this.isStreamingTranscription = false;
                 break;
+                
+            case 'streaming_error':
+                console.error('Streaming error:', data.error);
+                this.showToast(`Streaming error: ${data.error}`, 'error');
+                this.isStreamingTranscription = false;
+                break;
+                
             case 'error':
                 this.showToast(`Error: ${data.message}`, 'error');
                 break;
+        }
+    }
+
+    handleTranscriptionChunk(transcription, isFinal) {
+        if (isFinal) {
+            // Final chunk - update the complete transcription
+            this.transcriptionBuffer = transcription;
+            this.displayTranscription(transcription);
+        } else {
+            // Partial chunk - show with "..." to indicate it's in progress
+            this.displayTranscription(transcription + '...', true);
         }
     }
 
@@ -157,7 +189,9 @@ class MastraVoiceApp {
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
-                    sampleRate: 44100
+                    sampleRate: 16000, // Optimized for speech recognition
+                    channelCount: 1, // Mono for better compression
+                    autoGainControl: true
                 } 
             });
             
@@ -170,16 +204,13 @@ class MastraVoiceApp {
             this.showProcessingState('Setting up recording...');
             this.updateRecordingUI('preparing');
             
-            // Try different MIME types for better compatibility
+            // Optimize MIME type for streaming
             let mimeType = 'audio/webm;codecs=opus';
             if (!MediaRecorder.isTypeSupported(mimeType)) {
-                console.warn('WebM/Opus not supported, trying WebM/VP8...');
                 mimeType = 'audio/webm';
                 if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    console.warn('WebM not supported, trying MP4...');
                     mimeType = 'audio/mp4';
                     if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        console.warn('MP4 not supported, using default...');
                         mimeType = '';
                     }
                 }
@@ -197,7 +228,9 @@ class MastraVoiceApp {
             });
             
             this.audioChunks = [];
+            this.transcriptionBuffer = '';
             
+            // Optimized chunking for real-time streaming
             this.mediaRecorder.ondataavailable = (event) => {
                 console.log('📊 Data chunk received:', {
                     size: event.data.size,
@@ -205,12 +238,14 @@ class MastraVoiceApp {
                 });
                 if (event.data.size > 0) {
                     this.audioChunks.push(event.data);
+                    // Stream chunk immediately via WebSocket
+                    this.streamAudioChunk(event.data);
                 }
             };
             
             this.mediaRecorder.onstop = () => {
-                console.log('🛑 Recording stopped, processing...');
-                this.processRecording();
+                console.log('🛑 Recording stopped, finalizing...');
+                this.finalizeStreaming();
                 stream.getTracks().forEach(track => track.stop());
             };
             
@@ -218,6 +253,7 @@ class MastraVoiceApp {
                 console.error('🚨 MediaRecorder error:', event);
                 this.showToast('Recording error occurred', 'error');
                 this.hideProcessingState();
+                this.isStreamingTranscription = false;
             };
             
             // Add event listener for when recording actually starts
@@ -226,10 +262,13 @@ class MastraVoiceApp {
                 this.isRecording = true;
                 this.updateRecordingUI('recording');
                 this.startRecordingCountdown();
+                // Initialize streaming session
+                this.initializeStreamingSession();
             };
             
-            this.mediaRecorder.start(1000); // Collect data every second for better chunking
-            console.log('🎬 Starting MediaRecorder...');
+            // Use smaller chunks for more responsive streaming (250ms instead of 1000ms)
+            this.mediaRecorder.start(250);
+            console.log('🎬 Starting MediaRecorder with optimized chunking...');
             
         } catch (error) {
             console.error('Failed to start recording:', error);
@@ -239,7 +278,62 @@ class MastraVoiceApp {
         }
     }
 
+    async initializeStreamingSession() {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            const message = {
+                type: 'start_streaming',
+                provider: this.currentAiProvider,
+                audioFormat: this.mediaRecorder?.mimeType || 'audio/webm'
+            };
+            this.ws.send(JSON.stringify(message));
+        }
+    }
 
+    async streamAudioChunk(audioChunk) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN && this.isStreamingTranscription) {
+            try {
+                // Convert blob to base64 for WebSocket transmission
+                const arrayBuffer = await audioChunk.arrayBuffer();
+                const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+                
+                const message = {
+                    type: 'voice_data',
+                    audio: base64Audio,
+                    sessionId: this.streamingSessionId,
+                    chunkIndex: this.audioChunks.length - 1,
+                    isFinal: false
+                };
+                
+                this.ws.send(JSON.stringify(message));
+            } catch (error) {
+                console.error('Failed to stream audio chunk:', error);
+            }
+        }
+    }
+
+    async finalizeStreaming() {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN && this.streamingSessionId) {
+            const message = {
+                type: 'end_streaming',
+                sessionId: this.streamingSessionId
+            };
+            this.ws.send(JSON.stringify(message));
+        }
+        
+        this.isRecording = false;
+        this.isStreamingTranscription = false;
+        this.streamingSessionId = null;
+        
+        // Clear timer
+        if (this.recordingTimer) {
+            clearInterval(this.recordingTimer);
+            this.recordingTimer = null;
+        }
+        
+        // Update UI
+        this.updateRecordingUI('idle');
+        this.showProcessingState('Finalizing transcription...');
+    }
 
     startRecordingCountdown() {
         // Play audio notification to indicate recording started
@@ -591,11 +685,15 @@ class MastraVoiceApp {
         document.getElementById('recordingStatus').textContent = '';
     }
 
-    displayTranscription(transcription) {
+    displayTranscription(transcription, isPartial = false) {
         const panel = document.getElementById('transcriptionPanel');
         const textDiv = document.getElementById('transcriptionText');
         
-        textDiv.textContent = transcription;
+        if (isPartial) {
+            textDiv.textContent = transcription;
+        } else {
+            textDiv.textContent = transcription;
+        }
         panel.style.display = 'block';
         
         // Smooth scroll to results
