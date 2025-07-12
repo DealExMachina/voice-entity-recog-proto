@@ -101,9 +101,42 @@ class MastraVoiceApp {
         document.getElementById('refreshStatus').addEventListener('click', () => {
             this.loadSystemStatus();
         });
+
+        // Persona pane functionality
+        this.setupPersonaEventListeners();
         
         // Connect WebSocket after DOM is ready
         this.connectWebSocket();
+    }
+
+    setupPersonaEventListeners() {
+        // Add persona button
+        const addPersonaBtn = document.getElementById('addPersonaBtn');
+        if (addPersonaBtn) {
+            addPersonaBtn.addEventListener('click', () => {
+                this.showAddPersonaModal();
+            });
+        }
+
+        // Persona card clicks
+        const personaCards = document.querySelectorAll('.persona-card');
+        personaCards.forEach(card => {
+            card.addEventListener('click', (e) => {
+                if (!e.target.closest('button')) {
+                    this.selectPersona(card);
+                }
+            });
+        });
+
+        // Quick action buttons
+        const quickActionButtons = document.querySelectorAll('.persona-card + div button');
+        quickActionButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const action = button.textContent.trim().toLowerCase();
+                this.handleQuickAction(action);
+            });
+        });
     }
 
     connectWebSocket() {
@@ -1058,6 +1091,176 @@ class MastraVoiceApp {
         
         this.showProcessingState('Processing uploaded audio file...');
         await this.uploadAudio(file, file.name);
+    }
+
+    // Persona Management Methods
+    showAddPersonaModal() {
+        // Create modal HTML
+        const modalHTML = `
+            <div id="personaModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+                <div class="modern-card max-w-md w-full mx-4 p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-lg font-semibold text-slate-800">Add New Persona</h3>
+                        <button id="closePersonaModal" class="text-slate-400 hover:text-slate-600">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <form id="personaForm" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Name</label>
+                            <input type="text" id="personaName" class="modern-input w-full px-3 py-2 rounded-lg" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Title</label>
+                            <input type="text" id="personaTitle" class="modern-input w-full px-3 py-2 rounded-lg" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Company</label>
+                            <input type="text" id="personaCompany" class="modern-input w-full px-3 py-2 rounded-lg" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Industry</label>
+                            <select id="personaIndustry" class="modern-input w-full px-3 py-2 rounded-lg">
+                                <option value="technology">Technology</option>
+                                <option value="healthcare">Healthcare</option>
+                                <option value="finance">Finance</option>
+                                <option value="retail">Retail</option>
+                                <option value="manufacturing">Manufacturing</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Priority</label>
+                            <select id="personaPriority" class="modern-input w-full px-3 py-2 rounded-lg">
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                            </select>
+                        </div>
+                        <div class="flex space-x-3 pt-4">
+                            <button type="button" id="cancelPersona" class="flex-1 btn-primary text-slate-600 px-4 py-2 rounded-lg">
+                                Cancel
+                            </button>
+                            <button type="submit" class="flex-1 floating-action text-white px-4 py-2 rounded-lg">
+                                Add Persona
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        lucide.createIcons();
+        
+        // Add event listeners
+        document.getElementById('closePersonaModal').addEventListener('click', () => {
+            this.closePersonaModal();
+        });
+        
+        document.getElementById('cancelPersona').addEventListener('click', () => {
+            this.closePersonaModal();
+        });
+        
+        document.getElementById('personaForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.addPersona();
+        });
+    }
+
+    closePersonaModal() {
+        const modal = document.getElementById('personaModal');
+        if (modal) {
+            modal.remove();
+        }
+    }
+
+    addPersona() {
+        const name = document.getElementById('personaName').value;
+        const title = document.getElementById('personaTitle').value;
+        const company = document.getElementById('personaCompany').value;
+        const industry = document.getElementById('personaIndustry').value;
+        const priority = document.getElementById('personaPriority').value;
+        
+        // Create new persona card
+        const initials = name.split(' ').map(n => n[0]).join('').toUpperCase();
+        const badgeClass = priority === 'high' ? 'persona-badge' : 
+                          priority === 'medium' ? 'persona-badge secondary' : 'persona-badge success';
+        
+        const personaHTML = `
+            <div class="persona-card rounded-xl p-4 cursor-pointer animate-fade-in">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-sm font-medium">
+                        ${initials}
+                    </div>
+                    <div class="flex-1">
+                        <h4 class="font-medium text-slate-800 text-sm">${name}</h4>
+                        <p class="text-xs text-slate-500">${title}</p>
+                    </div>
+                    <div class="${badgeClass} px-2 py-0.5 rounded-full text-xs text-white">
+                        ${priority.charAt(0).toUpperCase() + priority.slice(1)}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Add to persona list
+        const personaList = document.querySelector('.space-y-3');
+        if (personaList) {
+            personaList.insertAdjacentHTML('beforeend', personaHTML);
+        }
+        
+        this.closePersonaModal();
+        this.showToast(`Persona "${name}" added successfully!`);
+        
+        // Re-initialize event listeners for new persona cards
+        this.setupPersonaEventListeners();
+    }
+
+    selectPersona(card) {
+        // Remove active state from all cards
+        document.querySelectorAll('.persona-card').forEach(c => {
+            c.classList.remove('ring-2', 'ring-purple-500');
+        });
+        
+        // Add active state to selected card
+        card.classList.add('ring-2', 'ring-purple-500');
+        
+        // Extract persona info
+        const name = card.querySelector('h4')?.textContent || 'Unknown';
+        const title = card.querySelector('p')?.textContent || '';
+        
+        this.showToast(`Selected persona: ${name} - ${title}`);
+        
+        // Update active persona display
+        this.updateActivePersona(name, title);
+    }
+
+    updateActivePersona(name, title) {
+        const activePersonaCard = document.querySelector('.persona-card.rounded-2xl');
+        if (activePersonaCard) {
+            const nameElement = activePersonaCard.querySelector('h3');
+            const titleElement = activePersonaCard.querySelector('p');
+            
+            if (nameElement) nameElement.textContent = name;
+            if (titleElement) titleElement.textContent = title;
+        }
+    }
+
+    handleQuickAction(action) {
+        switch (action) {
+            case 'search personas':
+                this.showToast('Search functionality coming soon!');
+                break;
+            case 'filter by status':
+                this.showToast('Filter functionality coming soon!');
+                break;
+            case 'analytics':
+                this.showStatistics();
+                break;
+            default:
+                this.showToast(`Action "${action}" not implemented yet`);
+        }
     }
 }
 

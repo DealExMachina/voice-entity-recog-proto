@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mastra Voice Entity Extraction</title>
+    <title>Sales Buddy - AI Voice Entity Extraction</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -108,6 +108,87 @@
             max-height: 300px;
             overflow-y: auto;
         }
+
+        /* Modern Persona Pane Styles */
+        .persona-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.9) 100%);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .persona-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        .persona-avatar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: all 0.3s ease;
+        }
+
+        .persona-avatar:hover {
+            transform: scale(1.05);
+        }
+
+        .persona-badge {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            backdrop-filter: blur(10px);
+        }
+
+        .persona-badge.secondary {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .persona-badge.success {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+
+        /* Enhanced Modern UI Elements */
+        .modern-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.95) 100%);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .modern-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+        }
+
+        .floating-action {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .floating-action:hover {
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 12px 40px rgba(102, 126, 234, 0.4);
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .modern-input {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .modern-input:focus {
+            background: rgba(255, 255, 255, 0.95);
+            border-color: rgba(102, 126, 234, 0.5);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
     </style>
     <script>
         tailwind.config = {
@@ -143,6 +224,120 @@
 </head>
 <body class="bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50 min-h-screen antialiased">
     <div class="flex min-h-screen">
+        <!-- Left Sidebar - Persona Pane -->
+        <div class="w-80 bg-white/30 backdrop-blur-sm border-r border-slate-200 p-6 sidebar">
+            <div class="flex items-center justify-between mb-8">
+                <div class="flex items-center space-x-3">
+                    <div class="p-2 rounded-full bg-gradient-to-br from-purple-100 to-pink-100">
+                        <i data-lucide="users" class="w-5 h-5 text-purple-600"></i>
+                    </div>
+                    <h2 class="text-xl font-semibold gradient-text">Personas</h2>
+                </div>
+                <button id="addPersonaBtn" class="floating-action w-8 h-8 rounded-full flex items-center justify-center text-white">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <!-- Active Persona -->
+            <div class="persona-card rounded-2xl p-6 mb-6">
+                <div class="flex items-center space-x-4 mb-4">
+                    <div class="persona-avatar w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg">
+                        JD
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="font-semibold text-slate-800">John Doe</h3>
+                        <p class="text-sm text-slate-500">Sales Manager</p>
+                    </div>
+                    <div class="persona-badge px-2 py-1 rounded-full text-xs text-white font-medium">
+                        Active
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-slate-600">Company:</span>
+                        <span class="font-medium text-slate-800">Acme Corp</span>
+                    </div>
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-slate-600">Industry:</span>
+                        <span class="font-medium text-slate-800">Technology</span>
+                    </div>
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-slate-600">Priority:</span>
+                        <span class="persona-badge secondary px-2 py-0.5 rounded-full text-xs text-white">High</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Persona List -->
+            <div class="space-y-3">
+                <h3 class="text-sm font-medium text-slate-600 mb-3">Recent Personas</h3>
+                
+                <div class="persona-card rounded-xl p-4 cursor-pointer">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 flex items-center justify-center text-white text-sm font-medium">
+                            SM
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-medium text-slate-800 text-sm">Sarah Miller</h4>
+                            <p class="text-xs text-slate-500">Marketing Director</p>
+                        </div>
+                        <div class="persona-badge success px-2 py-0.5 rounded-full text-xs text-white">
+                            Hot
+                        </div>
+                    </div>
+                </div>
+
+                <div class="persona-card rounded-xl p-4 cursor-pointer">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-400 flex items-center justify-center text-white text-sm font-medium">
+                            RJ
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-medium text-slate-800 text-sm">Robert Johnson</h4>
+                            <p class="text-xs text-slate-500">CTO</p>
+                        </div>
+                        <div class="persona-badge px-2 py-0.5 rounded-full text-xs text-white">
+                            Warm
+                        </div>
+                    </div>
+                </div>
+
+                <div class="persona-card rounded-xl p-4 cursor-pointer">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-red-400 flex items-center justify-center text-white text-sm font-medium">
+                            LW
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-medium text-slate-800 text-sm">Lisa Wang</h4>
+                            <p class="text-xs text-slate-500">VP Operations</p>
+                        </div>
+                        <div class="persona-badge secondary px-2 py-0.5 rounded-full text-xs text-white">
+                            New
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="mt-8 pt-6 border-t border-slate-200">
+                <h3 class="text-sm font-medium text-slate-600 mb-3">Quick Actions</h3>
+                <div class="space-y-2">
+                    <button class="w-full btn-primary text-slate-600 px-3 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                        <i data-lucide="search" class="w-4 h-4"></i>
+                        <span>Search Personas</span>
+                    </button>
+                    <button class="w-full btn-primary text-slate-600 px-3 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                        <i data-lucide="filter" class="w-4 h-4"></i>
+                        <span>Filter by Status</span>
+                    </button>
+                    <button class="w-full btn-primary text-slate-600 px-3 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                        <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+                        <span>Analytics</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Main Content Area -->
         <div class="flex-1 p-8">
             <!-- Header -->
@@ -152,12 +347,12 @@
                         <i data-lucide="mic" class="w-8 h-8 text-slate-600"></i>
                     </div>
                     <h1 class="text-4xl font-light text-slate-800 tracking-tight">
-                        Mastra
-                        <span class="font-medium text-slate-600">Voice Entity Extraction</span>
+                        Sales Buddy
+                        <span class="font-medium gradient-text">Voice Intelligence</span>
                     </h1>
                 </div>
                 <p class="text-slate-500 text-lg font-light max-w-2xl mx-auto">
-                    Intelligent entity extraction from voice conversations
+                    AI-powered sales conversation analysis with intelligent entity extraction
                 </p>
             </div>
 
@@ -166,7 +361,7 @@
                 <!-- AI Provider Selector (above recording button) -->
                 <div class="flex items-center space-x-2 mb-8">
                     <i data-lucide="cpu" class="w-4 h-4 text-slate-500"></i>
-                    <select id="aiProvider" class="border border-slate-200 rounded-lg px-4 py-2 text-sm text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent">
+                    <select id="aiProvider" class="modern-input border border-slate-200 rounded-lg px-4 py-2 text-sm text-slate-600 focus:outline-none">
                         <option value="demo">Demo Mode</option>
                         <option value="openai">OpenAI</option>
                         <option value="mistral">Mistral AI</option>
@@ -202,7 +397,7 @@
                 <!-- Text Input Area (hidden by default) -->
                 <div id="textInputArea" class="mt-6 w-full max-w-2xl" style="display: none;">
                     <textarea id="textInput" placeholder="Enter text for entity extraction..." 
-                        class="w-full p-4 border border-slate-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent bg-white/50 backdrop-blur-sm text-slate-700 placeholder-slate-400" rows="3"></textarea>
+                        class="modern-input w-full p-4 border border-slate-200 rounded-xl resize-none focus:outline-none text-slate-700 placeholder-slate-400" rows="3"></textarea>
                     <div class="flex justify-center mt-4">
                         <button id="processBtn" class="btn-primary text-slate-600 px-6 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
                             <i data-lucide="zap" class="w-4 h-4"></i>
@@ -213,7 +408,7 @@
             </div>
 
             <!-- Transcription Box -->
-            <div id="transcriptionPanel" class="glass-effect rounded-2xl p-6 shadow-sm fade-in mb-8" style="display: none;">
+            <div id="transcriptionPanel" class="modern-card rounded-2xl p-6 shadow-sm fade-in mb-8" style="display: none;">
                 <div class="flex items-center space-x-3 mb-4">
                     <i data-lucide="message-square" class="w-5 h-5 text-slate-600"></i>
                     <h2 class="text-lg font-medium text-slate-700">Transcription</h2>
@@ -238,7 +433,7 @@
             </div>
 
             <!-- Entity Type Filter -->
-            <select id="entityTypeFilter" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-transparent mb-4">
+            <select id="entityTypeFilter" class="modern-input w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none mb-4">
                 <option value="">All Entity Types</option>
                 <option value="person">👤 People</option>
                 <option value="organization">🏢 Organizations</option>
@@ -269,7 +464,7 @@
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-sm font-medium text-slate-600">Database</h3>
                     <input type="number" id="limitInput" placeholder="50" 
-                        class="border border-slate-200 rounded px-2 py-1 text-xs text-slate-600 bg-white/70 backdrop-blur-sm focus:outline-none focus:ring-1 focus:ring-slate-200 w-16" min="1" max="1000" value="50">
+                        class="modern-input border border-slate-200 rounded px-2 py-1 text-xs text-slate-600 focus:outline-none w-16" min="1" max="1000" value="50">
                 </div>
                 <div id="databaseEntities" class="entity-sidebar space-y-2">
                     <!-- Database entities will be loaded here -->
