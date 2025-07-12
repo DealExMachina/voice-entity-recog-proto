@@ -15,7 +15,12 @@ import apiRoutes from './routes/api.js';
 import type { 
   WebSocketMessage, 
   VoiceDataMessage, 
-  EntitiesExtractedMessage 
+  EntitiesExtractedMessage,
+  StreamingStartedMessage,
+  TranscriptionChunkMessage,
+  StreamingErrorMessage,
+  StartStreamingMessage,
+  EndStreamingMessage
 } from './types/index.js';
 
 dotenv.config();
@@ -138,11 +143,11 @@ wss.on('connection', (ws: WebSocket) => {
           audioChunks: [],
           transcription: '',
           startTime: Date.now(),
-          provider: (data as any).provider || 'openai'
+          provider: (data as StartStreamingMessage).provider || 'openai'
         });
         
         // Send session confirmation
-        const response: WebSocketMessage = {
+        const response: StreamingStartedMessage = {
           type: 'streaming_started',
           sessionId
         };
@@ -150,7 +155,7 @@ wss.on('connection', (ws: WebSocket) => {
         console.log('🎬 Streaming session started:', sessionId);
         
       } else if (data.type === 'voice_data') {
-        const voiceData = data as VoiceDataMessage & { sessionId?: string; chunkIndex?: number; isFinal?: boolean };
+        const voiceData = data as VoiceDataMessage;
         
         if (voiceData.sessionId && streamingSessions.has(voiceData.sessionId)) {
           const session = streamingSessions.get(voiceData.sessionId)!;
@@ -174,7 +179,7 @@ wss.on('connection', (ws: WebSocket) => {
                 session.transcription = chunkTranscription;
                 
                 // Send partial transcription back to client
-                const transcriptionResponse: WebSocketMessage = {
+                const transcriptionResponse: TranscriptionChunkMessage = {
                   type: 'transcription_chunk',
                   transcription: session.transcription,
                   isFinal: false
@@ -188,7 +193,7 @@ wss.on('connection', (ws: WebSocket) => {
         }
         
       } else if (data.type === 'end_streaming') {
-        const endData = data as { sessionId?: string };
+        const endData = data as EndStreamingMessage;
         
         if (endData.sessionId && streamingSessions.has(endData.sessionId)) {
           const session = streamingSessions.get(endData.sessionId)!;
@@ -236,7 +241,7 @@ wss.on('connection', (ws: WebSocket) => {
             
           } catch (error) {
             console.error('Final processing error:', error);
-            const errorResponse: WebSocketMessage = {
+            const errorResponse: StreamingErrorMessage = {
               type: 'streaming_error',
               error: error instanceof Error ? error.message : 'Unknown streaming error'
             };
