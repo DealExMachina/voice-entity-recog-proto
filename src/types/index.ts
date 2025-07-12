@@ -97,6 +97,7 @@ export type WebSocketMessageType =
   | 'transcription_chunk'
   | 'end_streaming'
   | 'streaming_error'
+  | 'agent_response'
   | 'error'
   | 'ping'
   | 'pong';
@@ -226,4 +227,56 @@ export interface RateLimitConfig {
   windowMs: number;
   max: number;
   message?: string;
+} 
+
+// Agent Persona Types
+export interface AgentPersona {
+  id: string;
+  name: string;
+  description: string;
+  voice: VoiceConfig;
+  personality: PersonalityConfig;
+  expertise: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface VoiceConfig {
+  provider: 'openai' | 'azure' | 'google' | 'demo';
+  voice: string;
+  language: string;
+  speed: number; // 0.5 to 2.0
+  pitch: number; // -20 to 20
+  volume: number; // 0 to 1
+}
+
+export interface PersonalityConfig {
+  tone: 'professional' | 'friendly' | 'casual' | 'formal' | 'enthusiastic';
+  style: 'conversational' | 'technical' | 'educational' | 'persuasive';
+  traits: string[];
+  responseLength: 'short' | 'medium' | 'long';
+}
+
+// Text-to-Speech Types
+export interface TTSRequest {
+  text: string;
+  voiceConfig?: Partial<VoiceConfig> | undefined;
+  personaId?: string | undefined;
+}
+
+export interface TTSResponse {
+  audioUrl: string;
+  duration: number;
+  wordCount: number;
+  metadata?: Record<string, unknown>;
+}
+
+// Agent Response Types
+export interface AgentResponse {
+  text: string;
+  audioUrl?: string;
+  entities: ExtractedEntity[];
+  confidence: number;
+  responseTime: number;
+  personaUsed: string;
 } 

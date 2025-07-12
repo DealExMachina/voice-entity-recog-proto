@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import { initializeDatabase } from './database/duckdb.js';
 import { MastraAgent } from './agents/mastra-agent.js';
 import { McpService } from './services/mcp-service.js';
+import { TTSService } from './services/tts-service.js';
 import { generalLimiter, healthLimiter } from './middleware/rateLimiter.js';
 import apiRoutes from './routes/api.js';
 import type { 
@@ -92,6 +93,7 @@ app.use('/api', generalLimiter);
 // Initialize services
 let mastraAgent: MastraAgent;
 let mcpService: McpService;
+let ttsService: TTSService;
 let serverReady = false; // Flag to track when server is completely ready
 
 async function initializeServices(): Promise<void> {
@@ -110,9 +112,15 @@ async function initializeServices(): Promise<void> {
     await mastraAgent.initialize();
     console.log('✅ Mastra agent initialized');
 
+    // Initialize TTS service
+    ttsService = new TTSService();
+    await ttsService.initialize();
+    console.log('✅ TTS service initialized');
+
     // Make services available to routes
     app.locals.mastraAgent = mastraAgent;
     app.locals.mcpService = mcpService;
+    app.locals.ttsService = ttsService;
 
   } catch (error) {
     console.error('❌ Failed to initialize services:', error);
