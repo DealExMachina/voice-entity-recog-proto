@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { initializeDatabase } from './database/duckdb.js';
+import { initializeDatabase, closeDatabase } from './database/duckdb.js';
 import { MastraAgent } from './agents/mastra-agent.js';
 import { McpService } from './services/mcp-service.js';
 import { TTSService } from './services/tts-service.js';
@@ -132,13 +132,20 @@ async function initializeServices(): Promise<void> {
 wss.on('connection', (ws: WebSocket) => {
   console.log('📡 New WebSocket connection');
   
-  // Track streaming sessions
+  // Track streaming sessions with proper cleanup
   const streamingSessions = new Map<string, {
     audioChunks: Buffer[];
     transcription: string;
     startTime: number;
     provider: string;
+    processing: boolean; // Flag to prevent concurrent processing
   }>();
+  
+  // Cleanup function for sessions
+  const cleanupSession = (sessionId: string) => {
+    streamingSessions.delete(sessionId);
+    console.log('🧹 Cleaned up streaming session:', sessionId);
+  };
   
   ws.on('message', async (message: any) => {
     try {
@@ -151,7 +158,8 @@ wss.on('connection', (ws: WebSocket) => {
           audioChunks: [],
           transcription: '',
           startTime: Date.now(),
-          provider: (data as StartStreamingMessage).provider || 'openai'
+          provider: (data as StartStreamingMessage).provider || 'openai',
+          processing: false
         });
         
         // Send session confirmation
@@ -172,8 +180,10 @@ wss.on('connection', (ws: WebSocket) => {
           const audioBuffer = Buffer.from(voiceData.audio, 'base64');
           session.audioChunks.push(audioBuffer);
           
-          // Process audio chunk for real-time transcription
-          if (session.audioChunks.length >= 2) { // Process after we have enough chunks
+          // Process audio chunk for real-time transcription (prevent concurrent processing)
+          if (session.audioChunks.length >= 2 && !session.processing) { // Process after we have enough chunks
+            session.processing = true;
+            
             try {
               // Combine recent chunks for processing
               const recentChunks = session.audioChunks.slice(-4); // Last 4 chunks (1 second at 250ms chunks)
@@ -196,6 +206,8 @@ wss.on('connection', (ws: WebSocket) => {
               }
             } catch (error) {
               console.error('Chunk transcription error:', error);
+            } finally {
+              session.processing = false;
             }
           }
         } else {
@@ -238,6 +250,14 @@ wss.on('connection', (ws: WebSocket) => {
         if (endData.sessionId && streamingSessions.has(endData.sessionId)) {
           const session = streamingSessions.get(endData.sessionId)!;
           
+          // Prevent concurrent processing
+          if (session.processing) {
+            console.log('⏳ Session is still processing, waiting...');
+            return;
+          }
+          
+          session.processing = true;
+          
           try {
             // Combine all audio chunks for final processing
             const fullAudio = Buffer.concat(session.audioChunks);
@@ -275,8 +295,6 @@ wss.on('connection', (ws: WebSocket) => {
             
             ws.send(JSON.stringify(finalResponse));
             
-            // Clean up session
-            streamingSessions.delete(endData.sessionId);
             console.log('✅ Streaming session completed:', endData.sessionId);
             
           } catch (error) {
@@ -286,7 +304,9 @@ wss.on('connection', (ws: WebSocket) => {
               error: error instanceof Error ? error.message : 'Unknown streaming error'
             };
             ws.send(JSON.stringify(errorResponse));
-            streamingSessions.delete(endData.sessionId);
+          } finally {
+            // Always clean up session
+            cleanupSession(endData.sessionId);
           }
         }
       }
@@ -303,7 +323,9 @@ wss.on('connection', (ws: WebSocket) => {
   ws.on('close', () => {
     console.log('📡 WebSocket connection closed');
     // Clean up any active streaming sessions for this connection
-    streamingSessions.clear();
+    for (const sessionId of streamingSessions.keys()) {
+      cleanupSession(sessionId);
+    }
   });
 });
 
@@ -351,21 +373,66 @@ async function startServer(): Promise<void> {
   });
 }
 
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit the process, just log the error
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  // Gracefully shutdown
+  process.exit(1);
+});
+
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('🛑 SIGTERM received, shutting down gracefully');
-  server.close(() => {
-    console.log('✅ Server closed');
+  try {
+    // Close WebSocket server
+    wss.close(() => {
+      console.log('✅ WebSocket server closed');
+    });
+    
+    // Close HTTP server
+    server.close(() => {
+      console.log('✅ HTTP server closed');
+    });
+    
+    // Close database connection
+    await closeDatabase();
+    console.log('✅ Database connection closed');
+    
     process.exit(0);
-  });
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
 });
 
 process.on('SIGINT', async () => {
   console.log('🛑 SIGINT received, shutting down gracefully');
-  server.close(() => {
-    console.log('✅ Server closed');
+  try {
+    // Close WebSocket server
+    wss.close(() => {
+      console.log('✅ WebSocket server closed');
+    });
+    
+    // Close HTTP server
+    server.close(() => {
+      console.log('✅ HTTP server closed');
+    });
+    
+    // Close database connection
+    await closeDatabase();
+    console.log('✅ Database connection closed');
+    
     process.exit(0);
-  });
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
 });
 
 startServer().catch((error) => {

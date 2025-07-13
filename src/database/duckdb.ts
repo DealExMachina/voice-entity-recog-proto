@@ -10,6 +10,8 @@ import type {
 } from '../types/index.js';
 
 let db: import('duckdb').Database | null = null;
+let activeQueries = 0;
+const MAX_CONCURRENT_QUERIES = 10;
 
 export async function initializeDatabase(config?: DatabaseConfig): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -107,20 +109,49 @@ export async function executeQuery<T = unknown>(
   params: unknown[] = []
 ): Promise<T[]> {
   return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    
-    const callback = (err: Error | null, rows: T[]) => {
-      if (err) {
-        reject(new Error(`Query failed: ${err.message}`));
-      } else {
-        resolve(rows || []);
+    try {
+      // Check concurrent query limit
+      if (activeQueries >= MAX_CONCURRENT_QUERIES) {
+        reject(new Error('Too many concurrent database queries'));
+        return;
       }
-    };
+      
+      activeQueries++;
+      
+      const database = getDatabase();
+      
+      if (!database) {
+        activeQueries--;
+        reject(new Error('Database not initialized'));
+        return;
+      }
+      
+      // Add timeout to prevent hanging operations
+      const timeout = setTimeout(() => {
+        activeQueries--;
+        reject(new Error('Database query timeout'));
+      }, 30000); // 30 second timeout
+      
+      const callback = (err: Error | null, rows: T[]) => {
+        clearTimeout(timeout);
+        activeQueries--;
+        if (err) {
+          console.error('Database query error:', err);
+          reject(new Error(`Query failed: ${err.message}`));
+        } else {
+          resolve(rows || []);
+        }
+      };
 
-    if (params.length === 0) {
-      database.all(sql, callback);
-    } else {
-      (database.all as any)(sql, ...params, callback);
+      if (params.length === 0) {
+        database.all(sql, callback);
+      } else {
+        (database.all as any)(sql, ...params, callback);
+      }
+    } catch (error) {
+      activeQueries--;
+      console.error('Database execution error:', error);
+      reject(new Error(`Database execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`));
     }
   });
 }
