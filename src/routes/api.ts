@@ -520,7 +520,7 @@ router.post('/tts/synthesize', aiLimiter, async (req: Request, res: Response) =>
       data: result
     };
     
-    res.json(response);
+    return res.json(response);
   } catch (error) {
     console.error('TTS synthesis error:', error);
     const errorResponse: ApiResponse = {
@@ -528,7 +528,7 @@ router.post('/tts/synthesize', aiLimiter, async (req: Request, res: Response) =>
       error: 'TTS synthesis failed',
       message: error instanceof Error ? error.message : 'Unknown error'
     };
-    res.status(500).json(errorResponse);
+    return res.status(500).json(errorResponse);
   }
 });
 
@@ -601,7 +601,7 @@ router.post('/agent/respond', aiLimiter, async (req: Request, res: Response) => 
       data: result
     };
     
-    res.json(apiResponse);
+    return res.json(apiResponse);
   } catch (error) {
     console.error('Agent response error:', error);
     const errorResponse: ApiResponse = {
@@ -609,7 +609,7 @@ router.post('/agent/respond', aiLimiter, async (req: Request, res: Response) => 
       error: 'Agent response failed',
       message: error instanceof Error ? error.message : 'Unknown error'
     };
-    res.status(500).json(errorResponse);
+    return res.status(500).json(errorResponse);
   }
 });
 
@@ -641,6 +641,14 @@ router.get('/personas', async (req: Request, res: Response) => {
 router.get('/personas/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Persona ID is required'
+      } as ApiResponse);
+    }
+    
     const persona = await getPersonaById(id);
     
     if (!persona) {
@@ -655,7 +663,7 @@ router.get('/personas/:id', async (req: Request, res: Response) => {
       data: { persona }
     };
     
-    res.json(response);
+    return res.json(response);
   } catch (error) {
     console.error('Get persona error:', error);
     const errorResponse: ApiResponse = {
@@ -663,7 +671,7 @@ router.get('/personas/:id', async (req: Request, res: Response) => {
       error: 'Failed to get persona',
       message: error instanceof Error ? error.message : 'Unknown error'
     };
-    res.status(500).json(errorResponse);
+    return res.status(500).json(errorResponse);
   }
 });
 
@@ -688,8 +696,8 @@ router.post('/personas', async (req: Request, res: Response) => {
     const personaId = await insertPersona({
       name,
       description,
-      voice,
-      personality,
+      voice: voice as unknown as Record<string, unknown>,
+      personality: personality as unknown as Record<string, unknown>,
       expertise
     });
     
@@ -699,7 +707,7 @@ router.post('/personas', async (req: Request, res: Response) => {
       message: 'Persona created successfully'
     };
     
-    res.status(201).json(response);
+    return res.status(201).json(response);
   } catch (error) {
     console.error('Create persona error:', error);
     const errorResponse: ApiResponse = {
@@ -707,7 +715,7 @@ router.post('/personas', async (req: Request, res: Response) => {
       error: 'Failed to create persona',
       message: error instanceof Error ? error.message : 'Unknown error'
     };
-    res.status(500).json(errorResponse);
+    return res.status(500).json(errorResponse);
   }
 });
 
@@ -723,6 +731,13 @@ router.put('/personas/:id', async (req: Request, res: Response) => {
       expertise: string[];
     };
     
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Persona ID is required'
+      } as ApiResponse);
+    }
+    
     // Check if persona exists
     const existingPersona = await getPersonaById(id);
     if (!existingPersona) {
@@ -735,8 +750,8 @@ router.put('/personas/:id', async (req: Request, res: Response) => {
     await updatePersona(id, {
       name,
       description,
-      voice,
-      personality,
+      voice: voice as unknown as Record<string, unknown>,
+      personality: personality as unknown as Record<string, unknown>,
       expertise
     });
     
@@ -745,7 +760,7 @@ router.put('/personas/:id', async (req: Request, res: Response) => {
       message: 'Persona updated successfully'
     };
     
-    res.json(response);
+    return res.json(response);
   } catch (error) {
     console.error('Update persona error:', error);
     const errorResponse: ApiResponse = {
@@ -753,7 +768,7 @@ router.put('/personas/:id', async (req: Request, res: Response) => {
       error: 'Failed to update persona',
       message: error instanceof Error ? error.message : 'Unknown error'
     };
-    res.status(500).json(errorResponse);
+    return res.status(500).json(errorResponse);
   }
 });
 
@@ -761,6 +776,13 @@ router.put('/personas/:id', async (req: Request, res: Response) => {
 router.delete('/personas/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Persona ID is required'
+      } as ApiResponse);
+    }
     
     // Check if persona exists
     const existingPersona = await getPersonaById(id);
@@ -778,7 +800,7 @@ router.delete('/personas/:id', async (req: Request, res: Response) => {
       message: 'Persona deleted successfully'
     };
     
-    res.json(response);
+    return res.json(response);
   } catch (error) {
     console.error('Delete persona error:', error);
     const errorResponse: ApiResponse = {
@@ -786,7 +808,7 @@ router.delete('/personas/:id', async (req: Request, res: Response) => {
       error: 'Failed to delete persona',
       message: error instanceof Error ? error.message : 'Unknown error'
     };
-    res.status(500).json(errorResponse);
+    return res.status(500).json(errorResponse);
   }
 });
 

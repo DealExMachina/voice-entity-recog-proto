@@ -198,6 +198,38 @@ wss.on('connection', (ws: WebSocket) => {
               console.error('Chunk transcription error:', error);
             }
           }
+        } else {
+          // Legacy voice data handling (fallback for non-streaming)
+          // Handle real-time voice data
+          const audioBuffer = Buffer.from(voiceData.audio, 'base64');
+          const transcription = await mastraAgent.transcribe(audioBuffer);
+          const entities = await mastraAgent.extractEntities(transcription);
+          
+          // Store conversation via MCP
+          const conversationResult = await mcpService.storeConversation({
+            transcription,
+            audio_duration: 0, // Duration not available in real-time
+            metadata: {
+              provider: mastraAgent.getProviderStatus().current,
+              processedAt: new Date().toISOString(),
+              entityCount: entities.length
+            }
+          });
+
+          // Store entities if we have a conversation ID
+          if (conversationResult.conversationId) {
+            await mcpService.storeEntities(entities, conversationResult.conversationId);
+          }
+          
+          // Send results back to client
+          const response: EntitiesExtractedMessage = {
+            type: 'entities_extracted',
+            transcription,
+            entities,
+            conversationId: conversationResult.conversationId || ''
+          };
+          
+          ws.send(JSON.stringify(response));
         }
         
       } else if (data.type === 'end_streaming') {
@@ -257,41 +289,6 @@ wss.on('connection', (ws: WebSocket) => {
             streamingSessions.delete(endData.sessionId);
           }
         }
-        
-      } else if (data.type === 'voice_data') {
-        // Legacy voice data handling (fallback)
-        const voiceData = data as VoiceDataMessage;
-        
-        // Handle real-time voice data
-        const audioBuffer = Buffer.from(voiceData.audio, 'base64');
-        const transcription = await mastraAgent.transcribe(audioBuffer);
-        const entities = await mastraAgent.extractEntities(transcription);
-        
-        // Store conversation via MCP
-        const conversationResult = await mcpService.storeConversation({
-          transcription,
-          audio_duration: 0, // Duration not available in real-time
-          metadata: {
-            provider: mastraAgent.getProviderStatus().current,
-            processedAt: new Date().toISOString(),
-            entityCount: entities.length
-          }
-        });
-
-        // Store entities if we have a conversation ID
-        if (conversationResult.conversationId) {
-          await mcpService.storeEntities(entities, conversationResult.conversationId);
-        }
-        
-        // Send results back to client
-        const response: EntitiesExtractedMessage = {
-          type: 'entities_extracted',
-          transcription,
-          entities,
-          conversationId: conversationResult.conversationId || ''
-        };
-        
-        ws.send(JSON.stringify(response));
       }
     } catch (error) {
       console.error('WebSocket error:', error);
