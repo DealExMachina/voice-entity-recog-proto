@@ -144,7 +144,7 @@ export class VoiceProcessorAgent {
     ];
     
     const index = Math.floor(size / 1000) % demoTexts.length;
-    return demoTexts[index];
+    return demoTexts[index] || 'Demo transcription result';
   }
 
   async processVoiceInput(audioBuffer: Buffer): Promise<VoiceProcessingResult> {

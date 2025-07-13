@@ -233,7 +233,8 @@ export class ResponseGeneratorAgent {
         temperature: 0.7
       });
       
-      const responseText = response.choices[0]?.message?.content || 
+      const responseContent = response.choices[0]?.message?.content;
+      const responseText = (typeof responseContent === 'string' && responseContent) ? responseContent : 
         'I apologize, but I couldn\'t generate a response.';
       
       return {

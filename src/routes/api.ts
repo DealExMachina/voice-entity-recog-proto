@@ -21,6 +21,7 @@ import type { EntityExtractorAgent } from '../agents/entity-extractor-agent.js';
 import type { ResponseGeneratorAgent } from '../agents/response-generator-agent.js';
 import type { McpService } from '../services/mcp-service.js';
 import type { TTSService } from '../services/tts-service.js';
+import type { IntegrationService } from '../services/integration-service.js';
 import { 
   insertPersona, 
   getPersonas, 
@@ -40,6 +41,7 @@ declare global {
       responseGeneratorAgent: ResponseGeneratorAgent;
       mcpService: McpService;
       ttsService: TTSService;
+      integrationService: IntegrationService;
     }
   }
 }

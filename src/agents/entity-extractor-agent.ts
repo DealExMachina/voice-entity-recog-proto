@@ -97,8 +97,8 @@ export class EntityExtractorAgent {
       });
 
       const responseContent = completion.choices[0]?.message?.content;
-      if (!responseContent) {
-        throw new Error('No response from OpenAI');
+      if (!responseContent || typeof responseContent !== 'string') {
+        throw new Error('No valid response from OpenAI');
       }
 
       // Parse the JSON response

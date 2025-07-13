@@ -237,6 +237,9 @@ export class MasterAgent {
       // Parse AI response and select agent
       const selectedName = this.parseAgentSelection(selection, suitableAgents);
       const selectedAgent = suitableAgents.find(a => a.name === selectedName);
+      if (!selectedAgent && suitableAgents.length === 0) {
+        throw new Error('No suitable agents available');
+      }
       return selectedAgent || suitableAgents[0];
     } catch (error) {
       console.error('AI selection failed, using highest confidence agent:', error);
@@ -298,7 +301,7 @@ Provide a concise final reasoning (2-3 sentences).
     }
     
     // Fallback to first agent
-    return agents[0].name;
+    return agents.length > 0 ? agents[0].name : 'unknown';
   }
 
   private calculateOverallConfidence(steps: ChainOfThoughtStep[]): number {
