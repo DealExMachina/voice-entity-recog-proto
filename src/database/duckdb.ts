@@ -53,6 +53,18 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
           metadata JSON
         );
 
+        -- Personas table
+        CREATE TABLE IF NOT EXISTS personas (
+          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+          name VARCHAR NOT NULL,
+          description TEXT,
+          voice JSON,
+          personality JSON,
+          expertise JSON,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
         -- Entity relationships table
         CREATE TABLE IF NOT EXISTS entity_relationships (
           id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -68,6 +80,7 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
         CREATE INDEX IF NOT EXISTS idx_entities_created_at ON entities(created_at);
         CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON conversations(created_at);
         CREATE INDEX IF NOT EXISTS idx_entities_source_conversation ON entities(source_conversation_id);
+        CREATE INDEX IF NOT EXISTS idx_personas_name ON personas(name);
       `;
 
       db!.exec(createTablesSQL, (err) => {
@@ -255,4 +268,81 @@ export function createDatabaseConnection(): DatabaseConnection {
     },
     close: closeDatabase
   };
+} 
+
+export async function insertPersona(persona: {
+  name: string;
+  description: string;
+  voice: Record<string, unknown>;
+  personality: Record<string, unknown>;
+  expertise: string[];
+}): Promise<string> {
+  const sql = `
+    INSERT INTO personas (name, description, voice, personality, expertise)
+    VALUES (?, ?, ?, ?, ?)
+    RETURNING id
+  `;
+  
+  const params = [
+    persona.name,
+    persona.description,
+    JSON.stringify(persona.voice),
+    JSON.stringify(persona.personality),
+    JSON.stringify(persona.expertise)
+  ];
+
+  const result = await executeQuery<{ id: string }>(sql, params);
+  
+  if (!result[0]?.id) {
+    throw new Error('Failed to insert persona - no ID returned');
+  }
+  
+  return result[0].id;
+}
+
+export async function getPersonas(): Promise<any[]> {
+  const sql = `
+    SELECT * FROM personas 
+    ORDER BY created_at DESC
+  `;
+  return executeQuery(sql);
+}
+
+export async function getPersonaById(id: string): Promise<any | null> {
+  const sql = `
+    SELECT * FROM personas 
+    WHERE id = ?
+  `;
+  const result = await executeQuery(sql, [id]);
+  return result[0] || null;
+}
+
+export async function updatePersona(id: string, persona: {
+  name: string;
+  description: string;
+  voice: Record<string, unknown>;
+  personality: Record<string, unknown>;
+  expertise: string[];
+}): Promise<void> {
+  const sql = `
+    UPDATE personas 
+    SET name = ?, description = ?, voice = ?, personality = ?, expertise = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `;
+  
+  const params = [
+    persona.name,
+    persona.description,
+    JSON.stringify(persona.voice),
+    JSON.stringify(persona.personality),
+    JSON.stringify(persona.expertise),
+    id
+  ];
+
+  await executeQuery(sql, params);
+}
+
+export async function deletePersona(id: string): Promise<void> {
+  const sql = `DELETE FROM personas WHERE id = ?`;
+  await executeQuery(sql, [id]);
 } 
