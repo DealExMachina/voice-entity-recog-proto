@@ -688,8 +688,8 @@ router.post('/personas', async (req: Request, res: Response) => {
     const personaId = await insertPersona({
       name,
       description,
-      voice,
-      personality,
+      voice: voice as unknown as Record<string, unknown>,
+      personality: personality as unknown as Record<string, unknown>,
       expertise
     });
     
@@ -735,8 +735,8 @@ router.put('/personas/:id', async (req: Request, res: Response) => {
     await updatePersona(id, {
       name,
       description,
-      voice,
-      personality,
+      voice: voice as unknown as Record<string, unknown>,
+      personality: personality as unknown as Record<string, unknown>,
       expertise
     });
     
