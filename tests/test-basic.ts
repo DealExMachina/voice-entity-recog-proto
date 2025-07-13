@@ -1,8 +1,9 @@
 import { MastraAgent } from '../src/agents/mastra-agent.js';
 import { McpService } from '../src/services/mcp-service.js';
-import { initializeDatabase } from '../src/database/duckdb.js';
+import { initializeDatabase, closeDatabase } from '../src/database/duckdb.js';
 import type { ExtractedEntity } from '../src/types/index.js';
 import dotenv from 'dotenv';
+import fs from 'fs';
 
 // Load environment variables
 dotenv.config();
@@ -62,40 +63,57 @@ async function testMcpService(): Promise<void> {
   
   // Use a unique database path for testing to avoid conflicts
   const originalDbPath = process.env.DB_PATH;
-  process.env.DB_PATH = `/tmp/test-entities-${Date.now()}.db`;
+  const testDbPath = `/tmp/test-entities-${Date.now()}.db`;
+  process.env.DB_PATH = testDbPath;
   
   try {
     // Initialize database first
     await initializeDatabase();
   
-  const mcpService = new McpService();
-  await mcpService.initialize();
-  
-  // Test storing an entity
-  const result = await mcpService.storeEntity({
-    type: 'person',
-    value: 'Test Person',
-    confidence: 0.9,
-    context: 'Testing context',
-    source_conversation_id: '00000000-0000-0000-0000-000000000000',
-    metadata: {
-      test: true,
-      timestamp: new Date().toISOString()
+    const mcpService = new McpService();
+    await mcpService.initialize();
+    
+    // Test storing an entity
+    const result = await mcpService.storeEntity({
+      type: 'person',
+      value: 'Test Person',
+      confidence: 0.9,
+      context: 'Testing context',
+      source_conversation_id: '00000000-0000-0000-0000-000000000000',
+      metadata: {
+        test: true,
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+    console.log('Store entity result:', result);
+    
+    if (!result.success) {
+      throw new Error('Failed to store entity');
     }
-  });
-  
-  console.log('Store entity result:', result);
-  
-  if (!result.success) {
-    throw new Error('Failed to store entity');
-  }
-  
-  // Test retrieving entities
-  const entitiesResult = await mcpService.getEntities({ limit: 5 });
-  console.log('Retrieved entities:', entitiesResult);
-  
-  console.log('✅ MCP service test completed');
+    
+    // Test retrieving entities
+    const entitiesResult = await mcpService.getEntities({ limit: 5 });
+    console.log('Retrieved entities:', entitiesResult);
+    
+    console.log('✅ MCP service test completed');
   } finally {
+    // Close database connection
+    try {
+      await closeDatabase();
+    } catch (error) {
+      console.warn('Warning: Error closing database:', error);
+    }
+    
+    // Clean up test database file
+    try {
+      if (fs.existsSync(testDbPath)) {
+        fs.unlinkSync(testDbPath);
+      }
+    } catch (error) {
+      console.warn('Warning: Could not delete test database file:', error);
+    }
+    
     // Restore original DB_PATH
     if (originalDbPath) {
       process.env.DB_PATH = originalDbPath;
