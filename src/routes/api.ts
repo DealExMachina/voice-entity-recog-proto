@@ -7,10 +7,23 @@ import type {
   AudioFile, 
   EntityType,
   ExtractedEntity,
-  AIProvider
+  AIProvider,
+  TTSRequest,
+  TTSResponse,
+  AgentPersona,
+  VoiceConfig,
+  PersonalityConfig
 } from '../types/index.js';
 import type { MastraAgent } from '../agents/mastra-agent.js';
 import type { McpService } from '../services/mcp-service.js';
+import type { TTSService } from '../services/tts-service.js';
+import { 
+  insertPersona, 
+  getPersonas, 
+  getPersonaById, 
+  updatePersona, 
+  deletePersona 
+} from '../database/duckdb.js';
 
 // Extend Express Request to include our app locals
 declare global {
@@ -18,6 +31,7 @@ declare global {
     interface Locals {
       mastraAgent: MastraAgent;
       mcpService: McpService;
+      ttsService: TTSService;
     }
   }
 }
@@ -477,6 +491,299 @@ router.get('/ai/providers', (req: Request, res: Response) => {
     const errorResponse: ApiResponse = {
       success: false,
       error: 'Failed to get AI providers',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
+    res.status(500).json(errorResponse);
+  }
+});
+
+// Text-to-Speech Endpoints
+
+// Synthesize speech from text
+router.post('/tts/synthesize', aiLimiter, async (req: Request, res: Response) => {
+  try {
+    const { ttsService } = req.app.locals;
+    const { text, voiceConfig, personaId } = req.body as TTSRequest;
+    
+    if (!text) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'No text provided' 
+      } as ApiResponse);
+    }
+
+    console.log('🔊 Synthesizing speech...');
+    const result = await ttsService.synthesizeSpeech({ text, voiceConfig, personaId });
+    
+    const response: ApiResponse<TTSResponse> = {
+      success: true,
+      data: result
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('TTS synthesis error:', error);
+    const errorResponse: ApiResponse = {
+      success: false,
+      error: 'TTS synthesis failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
+    res.status(500).json(errorResponse);
+  }
+});
+
+// Get available voices
+router.get('/tts/voices', (req: Request, res: Response) => {
+  try {
+    const { ttsService } = req.app.locals;
+    const voices = ttsService.getAvailableVoices();
+    
+    const response: ApiResponse = {
+      success: true,
+      data: { voices }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Get voices error:', error);
+    const errorResponse: ApiResponse = {
+      success: false,
+      error: 'Failed to get available voices',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
+    res.status(500).json(errorResponse);
+  }
+});
+
+// Agent Response with TTS
+router.post('/agent/respond', aiLimiter, async (req: Request, res: Response) => {
+  try {
+    const { mastraAgent, ttsService } = req.app.locals;
+    const { text, personaId, includeAudio = true } = req.body as {
+      text: string;
+      personaId?: string;
+      includeAudio?: boolean;
+    };
+    
+    if (!text) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'No text provided' 
+      } as ApiResponse);
+    }
+
+    console.log('🤖 Generating agent response...');
+    
+    // Generate response using AI
+    const response = await mastraAgent.generateResponse(text, personaId);
+    
+    // Synthesize speech if requested
+    let audioUrl: string | undefined;
+    if (includeAudio && response.text) {
+      const ttsResult = await ttsService.synthesizeSpeech({
+        text: response.text,
+        personaId
+      });
+      audioUrl = ttsResult.audioUrl;
+    }
+    
+    const result = {
+      text: response.text,
+      audioUrl,
+      entities: response.entities,
+      confidence: response.confidence,
+      responseTime: response.responseTime,
+      personaUsed: response.personaUsed
+    };
+    
+    const apiResponse: ApiResponse = {
+      success: true,
+      data: result
+    };
+    
+    res.json(apiResponse);
+  } catch (error) {
+    console.error('Agent response error:', error);
+    const errorResponse: ApiResponse = {
+      success: false,
+      error: 'Agent response failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
+    res.status(500).json(errorResponse);
+  }
+});
+
+// Persona Management Endpoints
+
+// Get all personas
+router.get('/personas', async (req: Request, res: Response) => {
+  try {
+    const personas = await getPersonas();
+    
+    const response: ApiResponse = {
+      success: true,
+      data: { personas }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Get personas error:', error);
+    const errorResponse: ApiResponse = {
+      success: false,
+      error: 'Failed to get personas',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
+    res.status(500).json(errorResponse);
+  }
+});
+
+// Get persona by ID
+router.get('/personas/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const persona = await getPersonaById(id);
+    
+    if (!persona) {
+      return res.status(404).json({
+        success: false,
+        error: 'Persona not found'
+      } as ApiResponse);
+    }
+    
+    const response: ApiResponse = {
+      success: true,
+      data: { persona }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Get persona error:', error);
+    const errorResponse: ApiResponse = {
+      success: false,
+      error: 'Failed to get persona',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
+    res.status(500).json(errorResponse);
+  }
+});
+
+// Create new persona
+router.post('/personas', async (req: Request, res: Response) => {
+  try {
+    const { name, description, voice, personality, expertise } = req.body as {
+      name: string;
+      description: string;
+      voice: VoiceConfig;
+      personality: PersonalityConfig;
+      expertise: string[];
+    };
+    
+    if (!name) {
+      return res.status(400).json({
+        success: false,
+        error: 'Name is required'
+      } as ApiResponse);
+    }
+    
+    const personaId = await insertPersona({
+      name,
+      description,
+      voice,
+      personality,
+      expertise
+    });
+    
+    const response: ApiResponse = {
+      success: true,
+      data: { personaId },
+      message: 'Persona created successfully'
+    };
+    
+    res.status(201).json(response);
+  } catch (error) {
+    console.error('Create persona error:', error);
+    const errorResponse: ApiResponse = {
+      success: false,
+      error: 'Failed to create persona',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
+    res.status(500).json(errorResponse);
+  }
+});
+
+// Update persona
+router.put('/personas/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, description, voice, personality, expertise } = req.body as {
+      name: string;
+      description: string;
+      voice: VoiceConfig;
+      personality: PersonalityConfig;
+      expertise: string[];
+    };
+    
+    // Check if persona exists
+    const existingPersona = await getPersonaById(id);
+    if (!existingPersona) {
+      return res.status(404).json({
+        success: false,
+        error: 'Persona not found'
+      } as ApiResponse);
+    }
+    
+    await updatePersona(id, {
+      name,
+      description,
+      voice,
+      personality,
+      expertise
+    });
+    
+    const response: ApiResponse = {
+      success: true,
+      message: 'Persona updated successfully'
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Update persona error:', error);
+    const errorResponse: ApiResponse = {
+      success: false,
+      error: 'Failed to update persona',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
+    res.status(500).json(errorResponse);
+  }
+});
+
+// Delete persona
+router.delete('/personas/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if persona exists
+    const existingPersona = await getPersonaById(id);
+    if (!existingPersona) {
+      return res.status(404).json({
+        success: false,
+        error: 'Persona not found'
+      } as ApiResponse);
+    }
+    
+    await deletePersona(id);
+    
+    const response: ApiResponse = {
+      success: true,
+      message: 'Persona deleted successfully'
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Delete persona error:', error);
+    const errorResponse: ApiResponse = {
+      success: false,
+      error: 'Failed to delete persona',
       message: error instanceof Error ? error.message : 'Unknown error'
     };
     res.status(500).json(errorResponse);
