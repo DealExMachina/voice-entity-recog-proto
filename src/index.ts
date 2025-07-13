@@ -142,7 +142,7 @@ wss.on('connection', (ws: WebSocket) => {
   
   ws.on('message', async (message: any) => {
     try {
-      const data = JSON.parse(message.toString()) as WebSocketMessage;
+      const data = JSON.parse(message.toString()) as WebSocketMessage | VoiceDataMessage | EntitiesExtractedMessage | StreamingStartedMessage | TranscriptionChunkMessage | StreamingErrorMessage | StartStreamingMessage | EndStreamingMessage;
       
       if (data.type === 'start_streaming') {
         // Initialize a new streaming session
@@ -258,7 +258,7 @@ wss.on('connection', (ws: WebSocket) => {
           }
         }
         
-      } else if (data.type === 'voice_data') {
+      } else if ((data as any).type === 'voice_data') {
         // Legacy voice data handling (fallback)
         const voiceData = data as VoiceDataMessage;
         
