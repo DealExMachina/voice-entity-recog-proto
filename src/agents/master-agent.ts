@@ -327,7 +327,8 @@ Provide a concise final reasoning (2-3 sentences).
         max_tokens: 300,
         temperature: 0.3
       });
-      return response.choices[0]?.message?.content || '';
+      const content = response.choices[0]?.message?.content;
+      return typeof content === 'string' ? content : '';
     } else {
       // Demo mode - simple heuristic
       return `Demo response for: ${prompt.substring(0, 100)}...`;

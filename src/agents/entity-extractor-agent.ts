@@ -139,8 +139,8 @@ export class EntityExtractorAgent {
       });
 
       const responseContent = response.choices[0]?.message?.content;
-      if (!responseContent) {
-        throw new Error('No response from Mistral');
+      if (!responseContent || typeof responseContent !== 'string') {
+        throw new Error('No valid response from Mistral');
       }
 
       // Parse the JSON response

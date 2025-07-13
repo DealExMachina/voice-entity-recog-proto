@@ -1,6 +1,4 @@
 import type { 
-  EmailAgent, 
-  CalendarAgent,
   EmailAgentConfig,
   CalendarAgentConfig,
   EmailAgentResponse,
