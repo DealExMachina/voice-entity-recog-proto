@@ -36,25 +36,44 @@ if ! command -v koyeb &> /dev/null; then
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS installation using Homebrew
         if command -v brew &> /dev/null; then
-            brew install koyeb/tap/koyeb
+            echo "🍺 Installing Koyeb CLI via Homebrew..."
+            if ! brew install koyeb/tap/koyeb; then
+                echo "❌ Homebrew installation failed. Trying shell script..."
+                if ! curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh; then
+                    echo "❌ Shell script installation also failed. Please install manually:"
+                    echo "   Visit: https://www.koyeb.com/docs/build-and-deploy/cli/installation"
+                    exit 1
+                fi
+                export PATH=$HOME/.koyeb/bin:$PATH
+            fi
         else
             echo "❌ Homebrew not found. Installing using shell script..."
-            curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+            if ! curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh; then
+                echo "❌ Koyeb CLI installation failed. Please install manually:"
+                echo "   Visit: https://www.koyeb.com/docs/build-and-deploy/cli/installation"
+                exit 1
+            fi
             export PATH=$HOME/.koyeb/bin:$PATH
         fi
     else
         # Linux/other systems installation using shell script
         echo "🐧 Installing Koyeb CLI for Linux..."
-        curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
-        export PATH=$HOME/.koyeb/bin:$PATH
-        
-        # Verify installation
-        if ! command -v koyeb &> /dev/null; then
+        if ! curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh; then
             echo "❌ Koyeb CLI installation failed. Please install manually:"
             echo "   Visit: https://www.koyeb.com/docs/build-and-deploy/cli/installation"
             exit 1
         fi
+        export PATH=$HOME/.koyeb/bin:$PATH
     fi
+    
+    # Verify installation worked
+    if ! command -v koyeb &> /dev/null; then
+        echo "❌ Koyeb CLI installation verification failed. Please install manually:"
+        echo "   Visit: https://www.koyeb.com/docs/build-and-deploy/cli/installation"
+        exit 1
+    fi
+    
+    echo "✅ Koyeb CLI installed successfully"
 fi
 
 # Login to Koyeb

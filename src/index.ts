@@ -9,6 +9,10 @@ import { fileURLToPath } from 'url';
 
 import { initializeDatabase } from './database/duckdb.js';
 import { MastraAgent } from './agents/mastra-agent.js';
+import { MasterAgent } from './agents/master-agent.js';
+import { VoiceProcessorAgent } from './agents/voice-processor-agent.js';
+import { EntityExtractorAgent } from './agents/entity-extractor-agent.js';
+import { ResponseGeneratorAgent } from './agents/response-generator-agent.js';
 import { McpService } from './services/mcp-service.js';
 import { TTSService } from './services/tts-service.js';
 import { generalLimiter, healthLimiter } from './middleware/rateLimiter.js';
@@ -92,6 +96,10 @@ app.use('/api', generalLimiter);
 
 // Initialize services
 let mastraAgent: MastraAgent;
+let masterAgent: MasterAgent;
+let voiceProcessorAgent: VoiceProcessorAgent;
+let entityExtractorAgent: EntityExtractorAgent;
+let responseGeneratorAgent: ResponseGeneratorAgent;
 let mcpService: McpService;
 let ttsService: TTSService;
 let serverReady = false; // Flag to track when server is completely ready
@@ -107,18 +115,48 @@ async function initializeServices(): Promise<void> {
     await mcpService.initialize();
     console.log('✅ MCP service initialized');
 
-    // Initialize Mastra agent
+    // Initialize specialized agents
+    voiceProcessorAgent = new VoiceProcessorAgent();
+    await voiceProcessorAgent.initialize();
+    console.log('✅ Voice Processor Agent initialized');
+
+    entityExtractorAgent = new EntityExtractorAgent();
+    await entityExtractorAgent.initialize();
+    console.log('✅ Entity Extractor Agent initialized');
+
+    responseGeneratorAgent = new ResponseGeneratorAgent();
+    await responseGeneratorAgent.initialize();
+    console.log('✅ Response Generator Agent initialized');
+
+    // Initialize Master Agent
+    masterAgent = new MasterAgent();
+    await masterAgent.initialize();
+    console.log('✅ Master Agent initialized');
+
+    // Register specialized agents with Master Agent
+    masterAgent.setActiveAgent('voice-processor', voiceProcessorAgent);
+    masterAgent.setActiveAgent('entity-extractor', entityExtractorAgent);
+    masterAgent.setActiveAgent('response-generator', responseGeneratorAgent);
+
+    // Initialize legacy Mastra agent (for backwards compatibility)
     mastraAgent = new MastraAgent();
     await mastraAgent.initialize();
-    console.log('✅ Mastra agent initialized');
+    console.log('✅ Mastra agent initialized (legacy)');
 
     // Initialize TTS service
     ttsService = new TTSService();
     await ttsService.initialize();
     console.log('✅ TTS service initialized');
 
+    // Register TTS with Master Agent
+    masterAgent.setActiveAgent('tts-synthesizer', ttsService);
+
     // Make services available to routes
     app.locals.mastraAgent = mastraAgent;
+    app.locals.masterAgent = masterAgent;
+    app.locals.voiceProcessorAgent = voiceProcessorAgent;
+    app.locals.entityExtractorAgent = entityExtractorAgent;
+    app.locals.responseGeneratorAgent = responseGeneratorAgent;
     app.locals.mcpService = mcpService;
     app.locals.ttsService = ttsService;
 

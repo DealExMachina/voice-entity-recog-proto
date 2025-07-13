@@ -15,6 +15,10 @@ import type {
   PersonalityConfig
 } from '../types/index.js';
 import type { MastraAgent } from '../agents/mastra-agent.js';
+import type { MasterAgent } from '../agents/master-agent.js';
+import type { VoiceProcessorAgent } from '../agents/voice-processor-agent.js';
+import type { EntityExtractorAgent } from '../agents/entity-extractor-agent.js';
+import type { ResponseGeneratorAgent } from '../agents/response-generator-agent.js';
 import type { McpService } from '../services/mcp-service.js';
 import type { TTSService } from '../services/tts-service.js';
 import { 
@@ -30,6 +34,10 @@ declare global {
   namespace Express {
     interface Locals {
       mastraAgent: MastraAgent;
+      masterAgent: MasterAgent;
+      voiceProcessorAgent: VoiceProcessorAgent;
+      entityExtractorAgent: EntityExtractorAgent;
+      responseGeneratorAgent: ResponseGeneratorAgent;
       mcpService: McpService;
       ttsService: TTSService;
     }
@@ -494,6 +502,113 @@ router.get('/ai/providers', (req: Request, res: Response) => {
       message: error instanceof Error ? error.message : 'Unknown error'
     };
     res.status(500).json(errorResponse);
+  }
+});
+
+// Master Agent Chain of Thought Endpoints
+
+// Process task with chain of thought reasoning
+router.post('/master-agent/process', aiLimiter, async (req: Request, res: Response) => {
+  try {
+    const { input, type, capabilities, priority = 'medium' } = req.body;
+    
+    if (!input) {
+      return res.status(400).json({
+        success: false,
+        error: 'Input is required'
+      });
+    }
+
+    const { masterAgent } = req.app.locals;
+    if (!masterAgent) {
+      return res.status(503).json({
+        success: false,
+        error: 'Master Agent not available'
+      });
+    }
+
+    // Create task context
+    const taskContext = {
+      type: type || 'response_generation',
+      input,
+      requiredCapabilities: capabilities || ['conversation', 'response-generation'],
+      priority: priority,
+      metadata: {
+        source: 'api',
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    console.log(`🧠 Master Agent processing task: ${taskContext.type}`);
+    
+    const result = await masterAgent.processTask(taskContext);
+    
+    res.json({
+      success: true,
+      data: {
+        result,
+        chainOfThought: {
+          taskType: taskContext.type,
+          capabilities: taskContext.requiredCapabilities,
+          priority: taskContext.priority,
+          processingTime: result.responseTime
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Master Agent processing error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Master Agent processing failed'
+    });
+  }
+});
+
+// Get Master Agent system status
+router.get('/master-agent/status', async (req: Request, res: Response) => {
+  try {
+    const { masterAgent } = req.app.locals;
+    if (!masterAgent) {
+      return res.status(503).json({
+        success: false,
+        error: 'Master Agent not available'
+      });
+    }
+
+    const registeredAgents = Array.from(masterAgent.getRegisteredAgents().entries() as IterableIterator<[string, any]>).map(([id, capability]) => ({
+      id,
+      ...capability
+    }));
+
+    const metrics = masterAgent.getAgentMetrics() as Map<string, any>;
+    const systemStatus = await masterAgent.getSystemStatus();
+
+    res.json({
+      success: true,
+      data: {
+        systemStatus,
+        registeredAgents,
+        metrics: Array.from(metrics.entries()).map(([id, metric]: [string, any]) => ({
+          agentId: id,
+          ...metric
+        })),
+        taskQueue: masterAgent.getTaskQueue().map((task: any) => ({
+          id: task.id,
+          type: task.context.type,
+          status: task.status,
+          assignedAgent: task.assignedAgent,
+          priority: task.context.priority
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('Master Agent status error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get Master Agent status'
+    });
   }
 });
 
