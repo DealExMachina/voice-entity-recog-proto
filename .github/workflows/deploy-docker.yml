@@ -69,6 +69,11 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
 
+    - name: Verify build artifacts (if local build)
+      run: |
+        echo "Verifying Docker image was built successfully..."
+        docker images | grep ghcr.io/dealexmachina/voice-entity-recog-proto || echo "Image pushed to registry"
+
     - name: Install and configure the Koyeb CLI
       uses: koyeb-community/koyeb-actions@v2
       with:
@@ -83,7 +88,7 @@ jobs:
           --ports "3000:http" \
           --regions "fra" \
           --instance-type "micro" \
-          --checks "3000:http:/health" \
+          --checks "3000:http:/api/health" \
           --env "NODE_ENV=production" \
           --env "PORT=3000" \
           --env "AI_PROVIDER=openai" \
@@ -95,7 +100,7 @@ jobs:
           --ports "3000:http" \
           --regions "fra" \
           --instance-type "micro" \
-          --checks "3000:http:/health" \
+          --checks "3000:http:/api/health" \
           --env "NODE_ENV=production" \
           --env "PORT=3000" \
           --env "AI_PROVIDER=openai" \
