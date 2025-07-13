@@ -41,9 +41,9 @@ USER sales-buddy
 # Expose port
 EXPOSE 3000
 
-# Health check
+# Health check - using Node.js instead of curl to avoid dependency issues
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-3000}/api/health || exit 1
+    CMD node -e "require('http').get('http://localhost:${PORT:-3000}/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
 
 # Start the application
 CMD ["npm", "start"]

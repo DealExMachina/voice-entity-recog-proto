@@ -28,7 +28,7 @@ services:
       - key: OPENAI_API_KEY
         scope: secret
     health_checks:
-      - path: /health
+      - path: /api/health
         port: 3000
         grace_period: 60
     scaling:
