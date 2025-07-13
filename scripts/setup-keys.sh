@@ -38,11 +38,20 @@ read -p "Enter your OpenAI API key (or press Enter to skip): " openai_key
 
 if [ ! -z "$openai_key" ]; then
     if [[ $openai_key == sk-* ]]; then
-        sed -i.bak "s/OPENAI_API_KEY=.*/OPENAI_API_KEY=$openai_key/" .env
+        # Use more portable sed syntax
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s/OPENAI_API_KEY=.*/OPENAI_API_KEY=$openai_key/" .env
+        else
+            sed -i "s/OPENAI_API_KEY=.*/OPENAI_API_KEY=$openai_key/" .env
+        fi
         echo "✅ OpenAI key configured"
     else
         echo "⚠️  Warning: OpenAI keys usually start with 'sk-'. Added anyway."
-        sed -i.bak "s/OPENAI_API_KEY=.*/OPENAI_API_KEY=$openai_key/" .env
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s/OPENAI_API_KEY=.*/OPENAI_API_KEY=$openai_key/" .env
+        else
+            sed -i "s/OPENAI_API_KEY=.*/OPENAI_API_KEY=$openai_key/" .env
+        fi
     fi
 else
     echo "⏭️  Skipped OpenAI configuration"
@@ -56,7 +65,12 @@ echo "   Get your key from: https://console.mistral.ai/"
 read -p "Enter your Mistral API key (or press Enter to skip): " mistral_key
 
 if [ ! -z "$mistral_key" ]; then
-    sed -i.bak "s/MISTRAL_API_KEY=.*/MISTRAL_API_KEY=$mistral_key/" .env
+    # Use more portable sed syntax
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/MISTRAL_API_KEY=.*/MISTRAL_API_KEY=$mistral_key/" .env
+    else
+        sed -i "s/MISTRAL_API_KEY=.*/MISTRAL_API_KEY=$mistral_key/" .env
+    fi
     echo "✅ Mistral key configured"
 else
     echo "⏭️  Skipped Mistral configuration"
@@ -74,16 +88,39 @@ if [ ! -z "$openai_key" ] && [ ! -z "$mistral_key" ]; then
     echo ""
     
     case $provider_choice in
-        1) sed -i.bak "s/AI_PROVIDER=.*/AI_PROVIDER=openai/" .env ;;
-        2) sed -i.bak "s/AI_PROVIDER=.*/AI_PROVIDER=mistral/" .env ;;
-        3) sed -i.bak "s/AI_PROVIDER=.*/AI_PROVIDER=demo/" .env ;;
+        1) 
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' "s/AI_PROVIDER=.*/AI_PROVIDER=openai/" .env
+            else
+                sed -i "s/AI_PROVIDER=.*/AI_PROVIDER=openai/" .env
+            fi ;;
+        2) 
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' "s/AI_PROVIDER=.*/AI_PROVIDER=mistral/" .env
+            else
+                sed -i "s/AI_PROVIDER=.*/AI_PROVIDER=mistral/" .env
+            fi ;;
+        3) 
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' "s/AI_PROVIDER=.*/AI_PROVIDER=demo/" .env
+            else
+                sed -i "s/AI_PROVIDER=.*/AI_PROVIDER=demo/" .env
+            fi ;;
         *) echo "Invalid choice, keeping demo mode" ;;
     esac
 elif [ ! -z "$openai_key" ]; then
-    sed -i.bak "s/AI_PROVIDER=.*/AI_PROVIDER=openai/" .env
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/AI_PROVIDER=.*/AI_PROVIDER=openai/" .env
+    else
+        sed -i "s/AI_PROVIDER=.*/AI_PROVIDER=openai/" .env
+    fi
     echo "🎯 Set default provider to OpenAI"
 elif [ ! -z "$mistral_key" ]; then
-    sed -i.bak "s/AI_PROVIDER=.*/AI_PROVIDER=mistral/" .env
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/AI_PROVIDER=.*/AI_PROVIDER=mistral/" .env
+    else
+        sed -i "s/AI_PROVIDER=.*/AI_PROVIDER=mistral/" .env
+    fi
     echo "🎯 Set default provider to Mistral"
 else
     echo "🎯 No API keys provided - using demo mode"
@@ -96,15 +133,20 @@ read -p "Enable rate limiting? (Y/n): " -n 1 -r rate_limit
 echo ""
 
 if [[ $rate_limit =~ ^[Nn]$ ]]; then
-    sed -i.bak "s/RATE_LIMIT_ENABLED=.*/RATE_LIMIT_ENABLED=false/" .env
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/RATE_LIMIT_ENABLED=.*/RATE_LIMIT_ENABLED=false/" .env
+    else
+        sed -i "s/RATE_LIMIT_ENABLED=.*/RATE_LIMIT_ENABLED=false/" .env
+    fi
     echo "🔓 Rate limiting disabled"
 else
-    sed -i.bak "s/RATE_LIMIT_ENABLED=.*/RATE_LIMIT_ENABLED=true/" .env
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/RATE_LIMIT_ENABLED=.*/RATE_LIMIT_ENABLED=true/" .env
+    else
+        sed -i "s/RATE_LIMIT_ENABLED=.*/RATE_LIMIT_ENABLED=true/" .env
+    fi
     echo "🔒 Rate limiting enabled (recommended)"
 fi
-
-# Clean up backup file
-rm -f .env.bak
 
 echo ""
 echo "🎉 Setup complete!"

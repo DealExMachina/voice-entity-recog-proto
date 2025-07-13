@@ -115,9 +115,13 @@ if curl -s http://localhost:${PORT:-3000}/api/health > /dev/null 2>&1; then
         -d '{"text": "Test with John Doe from Google"}' 2>/dev/null)
     
     if echo "$test_result" | grep -q '"success":true'; then
-        entity_count=$(echo "$test_result" | grep -o '"entities":\[[^]]*\]' | grep -o '},{' | wc -l)
-        entity_count=$((entity_count + 1))
-        echo "   ✅ Entity extraction working (found $entity_count entities)"
+        # Better entity counting - count actual entity objects
+        entity_count=$(echo "$test_result" | grep -o '"type":"[^"]*"' | wc -l)
+        if [ "$entity_count" -eq 0 ]; then
+            echo "   ✅ Entity extraction working (no entities found in test)"
+        else
+            echo "   ✅ Entity extraction working (found $entity_count entities)"
+        fi
     else
         echo "   ❌ Entity extraction failed"
     fi
