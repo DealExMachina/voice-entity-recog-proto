@@ -11,8 +11,10 @@ import { initializeDatabase } from './database/duckdb.js';
 import { MastraAgent } from './agents/mastra-agent.js';
 import { McpService } from './services/mcp-service.js';
 import { TTSService } from './services/tts-service.js';
+import { IntegrationService } from './services/integration-service.js';
 import { generalLimiter, healthLimiter } from './middleware/rateLimiter.js';
 import apiRoutes from './routes/api.js';
+import integrationRoutes from './routes/integration-api.js';
 import type { 
   WebSocketMessage, 
   VoiceDataMessage, 
@@ -94,6 +96,7 @@ app.use('/api', generalLimiter);
 let mastraAgent: MastraAgent;
 let mcpService: McpService;
 let ttsService: TTSService;
+let integrationService: IntegrationService;
 let serverReady = false; // Flag to track when server is completely ready
 
 async function initializeServices(): Promise<void> {
@@ -117,10 +120,16 @@ async function initializeServices(): Promise<void> {
     await ttsService.initialize();
     console.log('✅ TTS service initialized');
 
+    // Initialize Integration service
+    integrationService = new IntegrationService(mastraAgent);
+    await integrationService.initialize();
+    console.log('✅ Integration service initialized');
+
     // Make services available to routes
     app.locals.mastraAgent = mastraAgent;
     app.locals.mcpService = mcpService;
     app.locals.ttsService = ttsService;
+    app.locals.integrationService = integrationService;
 
   } catch (error) {
     console.error('❌ Failed to initialize services:', error);
@@ -312,6 +321,7 @@ wss.on('connection', (ws: WebSocket) => {
 
 // API routes
 app.use('/api', apiRoutes);
+app.use('/integration', integrationRoutes);
 
 // Serve main app (always use development HTML for consistent UX)
 app.get('/', (req: Request, res: Response) => {
