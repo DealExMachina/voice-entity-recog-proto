@@ -7,7 +7,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { initializeDatabase } from './database/duckdb.js';
+import { DuckDBProvider } from './database/duckdb-provider.js';
+import { databaseFactory } from './database/database-factory.js';
 import { MastraAgent } from './agents/mastra-agent.js';
 import { MasterAgent } from './agents/master-agent.js';
 import { VoiceProcessorAgent } from './agents/voice-processor-agent.js';
@@ -109,9 +110,11 @@ let serverReady = false; // Flag to track when server is completely ready
 
 async function initializeServices(): Promise<void> {
   try {
-    // Initialize database
-    await initializeDatabase();
-    console.log('✅ Database initialized');
+    // Initialize database provider
+    const databaseProvider = new DuckDBProvider();
+    await databaseProvider.initialize();
+    databaseFactory.setProvider(databaseProvider);
+    console.log('✅ Database provider initialized');
 
     // Initialize MCP service
     mcpService = new McpService();

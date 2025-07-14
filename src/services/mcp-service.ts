@@ -1,9 +1,5 @@
-import { 
-  insertEntity, 
-  insertConversation, 
-  getAllEntities, 
-  getEntitiesByType 
-} from '../database/duckdb.js';
+import { databaseFactory } from '../database/database-factory.js';
+import type { DatabaseProvider } from '../interfaces/database.js';
 import type { 
   Entity, 
   EntityType, 
@@ -85,13 +81,15 @@ interface StatsResult {
 
 export class McpService {
   private capabilities: McpCapabilities;
+  private database: DatabaseProvider;
 
-  constructor() {
+  constructor(database?: DatabaseProvider) {
     this.capabilities = {
       resources: true,
       tools: true,
       prompts: false
     };
+    this.database = database || databaseFactory.getProvider();
   }
 
   async initialize(): Promise<boolean> {
@@ -187,7 +185,7 @@ export class McpService {
     try {
       console.log('🔍 insertEntity called with:', JSON.stringify(entity, null, 2));
       
-      const entityId = await insertEntity({
+      const entityId = await this.database.insertEntity({
         type: entity.type,
         value: entity.value,
         confidence: entity.confidence || 1.0,
@@ -239,9 +237,9 @@ export class McpService {
       let entities: Entity[];
       
       if (options.type) {
-        entities = await getEntitiesByType(options.type, options.limit || 100);
+        entities = await this.database.getEntitiesByType(options.type, options.limit || 100);
       } else {
-        entities = await getAllEntities(options.limit || 100);
+        entities = await this.database.getAllEntities(options.limit || 100);
       }
 
       return {
@@ -262,7 +260,7 @@ export class McpService {
     try {
       console.log('🔍 insertConversation called with:', JSON.stringify(conversation, null, 2));
       
-      const conversationId = await insertConversation({
+      const conversationId = await this.database.insertConversation({
         transcription: conversation.transcription,
         audio_duration: conversation.audio_duration || 0,
         metadata: conversation.metadata || {}
@@ -287,7 +285,7 @@ export class McpService {
   // Get database statistics
   async getStats(): Promise<StatsResult> {
     try {
-      const entities = await getAllEntities(1000);
+      const entities = await this.database.getAllEntities(1000);
       const entityTypes: Record<string, number> = {};
       
       entities.forEach(entity => {
