@@ -65,40 +65,30 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
 
     // If database already exists and we're in test mode, clean it up first
     const isTestMode = dbPath.includes('test') || process.env.NODE_ENV === 'test';
-    if (isTestMode && fs.existsSync(dbPath)) {
-      console.log(`🧹 Test mode detected, cleaning up existing database: ${dbPath}`);
-      
-      // Close existing connection if any
-      if (db) {
-        console.log('🔌 Closing existing database connection...');
-        db.close(() => {
-          db = null;
-          // Remove the test database file completely
-          try {
-            fs.unlinkSync(dbPath);
-            console.log('🗑️ Removed existing test database file');
-          } catch (err) {
-            console.log('⚠️ Could not remove database file:', err);
-            // File might not exist, continue anyway
-          }
-          initializeNewDatabase();
-        });
-        return;
-      } else {
-        // Remove the test database file completely
-        try {
-          fs.unlinkSync(dbPath);
-          console.log('🗑️ Removed existing test database file');
-        } catch (err) {
-          console.log('⚠️ Could not remove database file:', err);
-          // File might not exist, continue anyway
-        }
-      }
+    
+    // Close any existing connection first
+    if (db) {
+      console.log('🔌 Closing existing database connection...');
+      db.close(() => {
+        db = null;
+        initializeNewDatabase();
+      });
+      return;
     }
 
     initializeNewDatabase();
 
     function initializeNewDatabase() {
+      // In test mode, ensure we start with a completely fresh database
+      if (isTestMode && fs.existsSync(dbPath)) {
+        try {
+          fs.unlinkSync(dbPath);
+          console.log('🗑️ Removed existing test database file for fresh start');
+        } catch (err) {
+          console.log('⚠️ Could not remove database file:', err);
+        }
+      }
+      
       // Initialize DuckDB
       db = new DuckDB.Database(dbPath, (err) => {
         if (err) {
@@ -108,8 +98,22 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
 
         // Create tables
         const createTablesSQL = `
+          -- Drop all tables first in test mode to ensure clean slate
+          ${isTestMode ? `
+          DROP TABLE IF EXISTS scheduled_meetings CASCADE;
+          DROP TABLE IF EXISTS client_communications CASCADE;
+          DROP TABLE IF EXISTS calendar_events CASCADE;
+          DROP TABLE IF EXISTS emails CASCADE;
+          DROP TABLE IF EXISTS entity_relationships CASCADE;
+          DROP TABLE IF EXISTS calendar_accounts CASCADE;
+          DROP TABLE IF EXISTS email_accounts CASCADE;
+          DROP TABLE IF EXISTS personas CASCADE;
+          DROP TABLE IF EXISTS conversations CASCADE;
+          DROP TABLE IF EXISTS entities CASCADE;
+          ` : ''}
+          
           -- Entities table
-          CREATE TABLE IF NOT EXISTS entities (
+          CREATE TABLE ${isTestMode ? '' : 'IF NOT EXISTS'} entities (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
             type VARCHAR NOT NULL,
             value TEXT NOT NULL,
@@ -122,7 +126,7 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
           );
 
           -- Conversations table
-          CREATE TABLE IF NOT EXISTS conversations (
+          CREATE TABLE ${isTestMode ? '' : 'IF NOT EXISTS'} conversations (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
             transcription TEXT NOT NULL,
             audio_duration FLOAT,
@@ -132,7 +136,7 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
           );
 
           -- Personas table
-          CREATE TABLE IF NOT EXISTS personas (
+          CREATE TABLE ${isTestMode ? '' : 'IF NOT EXISTS'} personas (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
             name VARCHAR NOT NULL,
             description TEXT,
@@ -144,7 +148,7 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
           );
 
           -- Entity relationships table
-          CREATE TABLE IF NOT EXISTS entity_relationships (
+          CREATE TABLE ${isTestMode ? '' : 'IF NOT EXISTS'} entity_relationships (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
             entity1_id UUID REFERENCES entities(id),
             entity2_id UUID REFERENCES entities(id),
@@ -161,7 +165,7 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
           CREATE INDEX IF NOT EXISTS idx_personas_name ON personas(name);
 
           -- Email integration tables
-          CREATE TABLE IF NOT EXISTS email_accounts (
+          CREATE TABLE ${isTestMode ? '' : 'IF NOT EXISTS'} email_accounts (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
             provider VARCHAR NOT NULL, -- 'gmail', 'outlook', 'imap'
             email VARCHAR NOT NULL UNIQUE,
@@ -175,7 +179,7 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
           );
 
-          CREATE TABLE IF NOT EXISTS emails (
+          CREATE TABLE ${isTestMode ? '' : 'IF NOT EXISTS'} emails (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
             account_id UUID REFERENCES email_accounts(id),
             external_id VARCHAR, -- Email provider's message ID
@@ -199,7 +203,7 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
           );
 
           -- Calendar integration tables
-          CREATE TABLE IF NOT EXISTS calendar_accounts (
+          CREATE TABLE ${isTestMode ? '' : 'IF NOT EXISTS'} calendar_accounts (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
             provider VARCHAR NOT NULL, -- 'google', 'outlook', 'ical'
             email VARCHAR NOT NULL,
@@ -214,7 +218,7 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
           );
 
-          CREATE TABLE IF NOT EXISTS calendar_events (
+          CREATE TABLE ${isTestMode ? '' : 'IF NOT EXISTS'} calendar_events (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
             account_id UUID REFERENCES calendar_accounts(id),
             external_id VARCHAR, -- Calendar provider's event ID
@@ -236,7 +240,7 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
           );
 
           -- Client/Entity relationship tracking
-          CREATE TABLE IF NOT EXISTS client_communications (
+          CREATE TABLE ${isTestMode ? '' : 'IF NOT EXISTS'} client_communications (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
             entity_id UUID REFERENCES entities(id),
             communication_type VARCHAR NOT NULL, -- 'email', 'calendar', 'voice', 'meeting'
@@ -253,7 +257,7 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
           );
 
           -- Meeting scheduling and tracking
-          CREATE TABLE IF NOT EXISTS scheduled_meetings (
+          CREATE TABLE ${isTestMode ? '' : 'IF NOT EXISTS'} scheduled_meetings (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
             title VARCHAR NOT NULL,
             description TEXT,
