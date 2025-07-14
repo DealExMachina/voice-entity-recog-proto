@@ -541,14 +541,13 @@ export async function deletePersona(id: string): Promise<void> {
   await executeQuery(sql, [id]);
 } 
 
-// Test-specific functions (only used in tests)
+// --- TEST-ONLY DB HELPERS ---
 export function createTestDatabaseConnection(): import('duckdb').Database {
   return new DuckDB.Database(':memory:');
 }
 
 export async function initializeTestDatabase(db: import('duckdb').Database): Promise<void> {
   return new Promise((resolve, reject) => {
-    // Create tables for test database
     const createTablesSQL = `
       -- Entities table
       CREATE TABLE entities (
@@ -562,7 +561,6 @@ export async function initializeTestDatabase(db: import('duckdb').Database): Pro
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         metadata JSON
       );
-
       -- Conversations table
       CREATE TABLE conversations (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -572,7 +570,6 @@ export async function initializeTestDatabase(db: import('duckdb').Database): Pro
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         metadata JSON
       );
-
       -- Personas table
       CREATE TABLE personas (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -584,7 +581,6 @@ export async function initializeTestDatabase(db: import('duckdb').Database): Pro
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-
       -- Entity relationships table
       CREATE TABLE entity_relationships (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -594,14 +590,11 @@ export async function initializeTestDatabase(db: import('duckdb').Database): Pro
         confidence FLOAT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-
-      -- Create indexes for better performance
       CREATE INDEX idx_entities_type ON entities(type);
       CREATE INDEX idx_entities_created_at ON entities(created_at);
       CREATE INDEX idx_conversations_created_at ON conversations(created_at);
       CREATE INDEX idx_entities_source_conversation ON entities(source_conversation_id);
       CREATE INDEX idx_personas_name ON personas(name);
-
       -- Email integration tables
       CREATE TABLE email_accounts (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -616,7 +609,6 @@ export async function initializeTestDatabase(db: import('duckdb').Database): Pro
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-
       CREATE TABLE emails (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
         account_id UUID REFERENCES email_accounts(id),
@@ -639,7 +631,6 @@ export async function initializeTestDatabase(db: import('duckdb').Database): Pro
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-
       -- Calendar integration tables
       CREATE TABLE calendar_accounts (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -655,7 +646,6 @@ export async function initializeTestDatabase(db: import('duckdb').Database): Pro
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-
       CREATE TABLE calendar_events (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
         account_id UUID REFERENCES calendar_accounts(id),
@@ -676,7 +666,6 @@ export async function initializeTestDatabase(db: import('duckdb').Database): Pro
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-
       -- Client/Entity relationship tracking
       CREATE TABLE client_communications (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -693,7 +682,6 @@ export async function initializeTestDatabase(db: import('duckdb').Database): Pro
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-
       -- Meeting scheduling and tracking
       CREATE TABLE scheduled_meetings (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -711,8 +699,6 @@ export async function initializeTestDatabase(db: import('duckdb').Database): Pro
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-
-      -- Create indexes for new tables
       CREATE INDEX idx_emails_account_id ON emails(account_id);
       CREATE INDEX idx_emails_received_at ON emails(received_at);
       CREATE INDEX idx_emails_sender ON emails(sender);
@@ -725,118 +711,56 @@ export async function initializeTestDatabase(db: import('duckdb').Database): Pro
       CREATE INDEX idx_scheduled_meetings_entity_ids ON scheduled_meetings USING GIN(entity_ids);
       CREATE INDEX idx_scheduled_meetings_status ON scheduled_meetings(status);
     `;
-
-    console.log('🔨 Creating test database tables...');
     db.exec(createTablesSQL, (err) => {
-      if (err) {
-        console.error('❌ Failed to create test tables:', err.message);
-        reject(new Error(`Failed to create test tables: ${err.message}`));
-      } else {
-        console.log('📊 Test database tables created successfully');
-        resolve();
-      }
+      if (err) reject(new Error(`Failed to create test tables: ${err.message}`));
+      else resolve();
     });
   });
 }
 
-// Test-specific database functions that accept a database connection
-export async function executeQueryWithDb<T = unknown>(
-  db: import('duckdb').Database,
-  sql: string, 
-  params: unknown[] = []
-): Promise<T[]> {
+export async function closeTestDatabase(db: import('duckdb').Database): Promise<void> {
   return new Promise((resolve, reject) => {
-    const callback = (err: Error | null, rows: T[]) => {
-      if (err) {
-        reject(new Error(`Query failed: ${err.message}`));
-      } else {
-        resolve(rows || []);
-      }
-    };
-
-    if (params.length === 0) {
-      db.all(sql, callback);
-    } else {
-      (db.all as any)(sql, ...params, callback);
-    }
+    db.close((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
   });
 }
 
-export async function insertEntityWithDb(
-  db: import('duckdb').Database,
-  entity: InsertEntityParams
-): Promise<string> {
-  const sql = `
-    INSERT INTO entities (type, value, confidence, context, source_conversation_id, metadata)
-    VALUES (?, ?, ?, ?, ?, ?)
-    RETURNING id
-  `;
-  
-  const params = [
-    entity.type,
-    entity.value,
-    entity.confidence,
-    entity.context,
-    entity.source_conversation_id,
-    JSON.stringify(entity.metadata || {})
-  ];
+// --- TEST-ONLY DB FUNCTIONS ---
+export async function executeQueryWithDb<T = unknown>(db: import('duckdb').Database, sql: string, params: unknown[] = []): Promise<T[]> {
+  return new Promise((resolve, reject) => {
+    const callback = (err: Error | null, rows: T[]) => {
+      if (err) reject(new Error(`Query failed: ${err.message}`));
+      else resolve(rows || []);
+    };
+    if (params.length === 0) db.all(sql, callback);
+    else (db.all as any)(sql, ...params, callback);
+  });
+}
 
+export async function insertEntityWithDb(db: import('duckdb').Database, entity: InsertEntityParams): Promise<string> {
+  const sql = `INSERT INTO entities (type, value, confidence, context, source_conversation_id, metadata) VALUES (?, ?, ?, ?, ?, ?) RETURNING id`;
+  const params = [entity.type, entity.value, entity.confidence, entity.context, entity.source_conversation_id, JSON.stringify(entity.metadata || {})];
   const result = await executeQueryWithDb<{ id: string }>(db, sql, params);
-  
-  if (!result[0]?.id) {
-    throw new Error('Failed to insert entity - no ID returned');
-  }
-  
+  if (!result[0]?.id) throw new Error('Failed to insert entity - no ID returned');
   return result[0].id;
 }
 
-export async function getAllEntitiesWithDb(
-  db: import('duckdb').Database,
-  limit: number = 100
-): Promise<Entity[]> {
-  const sql = `
-    SELECT * FROM entities 
-    ORDER BY created_at DESC 
-    LIMIT ?
-  `;
+export async function getAllEntitiesWithDb(db: import('duckdb').Database, limit: number = 100): Promise<Entity[]> {
+  const sql = `SELECT * FROM entities ORDER BY created_at DESC LIMIT ?`;
   return executeQueryWithDb<Entity>(db, sql, [limit]);
 }
 
-export async function getEntitiesByTypeWithDb(
-  db: import('duckdb').Database,
-  type: EntityType, 
-  limit: number = 100
-): Promise<Entity[]> {
-  const sql = `
-    SELECT * FROM entities 
-    WHERE type = ? 
-    ORDER BY created_at DESC 
-    LIMIT ?
-  `;
+export async function getEntitiesByTypeWithDb(db: import('duckdb').Database, type: EntityType, limit: number = 100): Promise<Entity[]> {
+  const sql = `SELECT * FROM entities WHERE type = ? ORDER BY created_at DESC LIMIT ?`;
   return executeQueryWithDb<Entity>(db, sql, [type, limit]);
 }
 
-export async function insertConversationWithDb(
-  db: import('duckdb').Database,
-  conversation: InsertConversationParams
-): Promise<string> {
-  const sql = `
-    INSERT INTO conversations (transcription, audio_duration, metadata)
-    VALUES (?, ?, ?)
-    RETURNING id
-  `;
-  
-  const params = [
-    conversation.transcription,
-    conversation.audio_duration,
-    JSON.stringify(conversation.metadata || {})
-  ];
-
+export async function insertConversationWithDb(db: import('duckdb').Database, conversation: InsertConversationParams): Promise<string> {
+  const sql = `INSERT INTO conversations (transcription, audio_duration, metadata) VALUES (?, ?, ?) RETURNING id`;
+  const params = [conversation.transcription, conversation.audio_duration, JSON.stringify(conversation.metadata || {})];
   const result = await executeQueryWithDb<{ id: string }>(db, sql, params);
-  
-  if (!result[0]?.id) {
-    throw new Error('Failed to insert conversation - no ID returned');
-  }
-  
+  if (!result[0]?.id) throw new Error('Failed to insert conversation - no ID returned');
   return result[0].id;
 } 

@@ -1,6 +1,15 @@
 import { MastraAgent } from '../src/agents/mastra-agent.js';
 import type { ExtractedEntity } from '../src/types/index.js';
 import dotenv from 'dotenv';
+import {
+  createTestDatabaseConnection,
+  initializeTestDatabase,
+  closeTestDatabase,
+  insertEntityWithDb,
+  getAllEntitiesWithDb,
+  getEntitiesByTypeWithDb,
+  insertConversationWithDb
+} from '../src/database/duckdb.js';
 
 // Declare process global for TypeScript
 declare const process: {
@@ -64,6 +73,43 @@ async function testEntityExtraction(): Promise<void> {
   }
   
   console.log('✅ Entity extraction test completed');
+}
+
+async function testDuckDbIntegration(): Promise<void> {
+  console.log('🧪 Testing DuckDB Integration...');
+  const db = createTestDatabaseConnection();
+  try {
+    await initializeTestDatabase(db);
+    // Insert entity
+    const entityId = await insertEntityWithDb(db, {
+      type: 'person',
+      value: 'Test Person',
+      confidence: 0.9,
+      context: 'Testing context',
+      source_conversation_id: '00000000-0000-0000-0000-000000000000',
+      metadata: { test: true, timestamp: new Date().toISOString() }
+    });
+    console.log('✅ Entity inserted with ID:', entityId);
+    // Retrieve entities
+    const entities = await getAllEntitiesWithDb(db, 10);
+    if (!entities.length) throw new Error('No entities found');
+    console.log('✅ Retrieved entities:', entities);
+    // Filter by type
+    const personEntities = await getEntitiesByTypeWithDb(db, 'person', 10);
+    if (!personEntities.length) throw new Error('No person entities found');
+    console.log('✅ Retrieved person entities:', personEntities);
+    // Insert conversation
+    const conversationId = await insertConversationWithDb(db, {
+      transcription: 'Test conversation',
+      audio_duration: 12.3,
+      metadata: { test: true }
+    });
+    console.log('✅ Conversation inserted with ID:', conversationId);
+  } finally {
+    await closeTestDatabase(db);
+    console.log('🔌 Test database connection closed');
+  }
+  console.log('✅ DuckDB integration test completed');
 }
 
 async function testMcpServiceLogic(): Promise<void> {
@@ -163,16 +209,14 @@ async function runTests(): Promise<void> {
   try {
     await testEntityExtraction();
     console.log();
-    
+    await testDuckDbIntegration();
+    console.log();
     await testMcpServiceLogic();
     console.log();
-    
     await testDemoEntityExtraction();
     console.log();
-    
     await testProviderSwitching();
     console.log();
-    
     console.log('✅ All tests completed successfully!');
   } catch (error) {
     console.error('❌ Test failed:', error);
