@@ -134,7 +134,7 @@ export class EntityExtractorAgent {
             content: prompt
           }
         ],
-        max_tokens: 1500,
+        maxTokens: 1500,
         temperature: 0.1
       });
 

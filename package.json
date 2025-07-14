@@ -54,7 +54,6 @@
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.7",
     "openai": "^4.20.0",
-    "typescript": "^5.8.3",
     "ws": "^8.14.2"
   },
   "devDependencies": {
@@ -81,6 +80,7 @@
     "prettier": "^3.6.1",
     "tailwindcss": "^4.1.11",
     "terser": "^5.43.1",
-    "tsx": "^4.20.3"
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
   }
 }

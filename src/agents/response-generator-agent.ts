@@ -229,7 +229,7 @@ export class ResponseGeneratorAgent {
       const response = await this.mistral!.chat.complete({
         model: 'mistral-tiny',
         messages,
-        max_tokens: 400,
+        maxTokens: 400,
         temperature: 0.7
       });
       

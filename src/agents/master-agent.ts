@@ -324,7 +324,7 @@ Provide a concise final reasoning (2-3 sentences).
       const response = await this.mistral.chat.complete({
         model: 'mistral-tiny',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 300,
+        maxTokens: 300,
         temperature: 0.3
       });
       const content = response.choices[0]?.message?.content;
