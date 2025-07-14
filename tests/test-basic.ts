@@ -113,7 +113,7 @@ async function testDuckDbIntegration(): Promise<void> {
     const entityId = await new Promise<string>((resolve, reject) => {
       const sql = `INSERT INTO entities (type, value, confidence, context, metadata) VALUES (?, ?, ?, ?, ?) RETURNING id`;
       const params = ['person', 'Test Person', 0.9, 'Test context', JSON.stringify({ test: true })];
-      db.all(sql, params, (err, rows) => {
+      db.all(sql, ...params, (err, rows) => {
         if (err) reject(new Error(`Failed to insert entity: ${err.message}`));
         else resolve(rows[0].id);
       });
@@ -123,7 +123,7 @@ async function testDuckDbIntegration(): Promise<void> {
     
     // Query entities
     const entities = await new Promise<any[]>((resolve, reject) => {
-      db.all('SELECT * FROM entities WHERE type = ?', ['person'], (err, rows) => {
+      db.all('SELECT * FROM entities WHERE type = ?', 'person', (err, rows) => {
         if (err) reject(new Error(`Failed to query entities: ${err.message}`));
         else resolve(rows);
       });
@@ -139,7 +139,7 @@ async function testDuckDbIntegration(): Promise<void> {
     const conversationId = await new Promise<string>((resolve, reject) => {
       const sql = `INSERT INTO conversations (transcription, audio_duration, metadata) VALUES (?, ?, ?) RETURNING id`;
       const params = ['Test conversation', 30.5, JSON.stringify({ test: true })];
-      db.all(sql, params, (err, rows) => {
+      db.all(sql, ...params, (err, rows) => {
         if (err) reject(new Error(`Failed to insert conversation: ${err.message}`));
         else resolve(rows[0].id);
       });

@@ -550,6 +550,24 @@ export function createTestDatabaseConnection(): import('duckdb').Database {
 
 export async function initializeTestDatabase(db: import('duckdb').Database): Promise<void> {
   return new Promise((resolve, reject) => {
+    // First, drop all tables in the correct order to avoid foreign key constraint issues
+    const dropTablesSQL = `
+      -- Drop tables that depend on other tables first
+      DROP TABLE IF EXISTS scheduled_meetings CASCADE;
+      DROP TABLE IF EXISTS client_communications CASCADE;
+      DROP TABLE IF EXISTS calendar_events CASCADE;
+      DROP TABLE IF EXISTS emails CASCADE;
+      DROP TABLE IF EXISTS entity_relationships CASCADE;
+      
+      -- Drop independent tables
+      DROP TABLE IF EXISTS calendar_accounts CASCADE;
+      DROP TABLE IF EXISTS email_accounts CASCADE;
+      DROP TABLE IF EXISTS personas CASCADE;
+      DROP TABLE IF EXISTS conversations CASCADE;
+      DROP TABLE IF EXISTS entities CASCADE;
+    `;
+    
+    // Then create tables
     const createTablesSQL = `
       -- Entities table
       CREATE TABLE entities (
@@ -713,9 +731,18 @@ export async function initializeTestDatabase(db: import('duckdb').Database): Pro
       CREATE INDEX idx_scheduled_meetings_entity_ids ON scheduled_meetings USING GIN(entity_ids);
       CREATE INDEX idx_scheduled_meetings_status ON scheduled_meetings(status);
     `;
-    db.exec(createTablesSQL, (err) => {
-      if (err) reject(new Error(`Failed to create test tables: ${err.message}`));
-      else resolve();
+    
+    // Execute drop tables first, then create tables
+    db.exec(dropTablesSQL, (dropErr) => {
+      if (dropErr) {
+        console.warn('Warning: Could not drop all tables:', dropErr.message);
+        // Continue anyway as some tables might not exist
+      }
+      
+      db.exec(createTablesSQL, (createErr) => {
+        if (createErr) reject(new Error(`Failed to create test tables: ${createErr.message}`));
+        else resolve();
+      });
     });
   });
 }
