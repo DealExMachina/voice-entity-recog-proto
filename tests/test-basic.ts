@@ -71,21 +71,13 @@ async function testEntityExtraction(): Promise<void> {
 async function testMcpService(): Promise<void> {
   console.log('🧪 Testing MCP Service...');
   
-  // Use a unique database path for testing to avoid conflicts
+  // Use in-memory database for testing to avoid file locking issues
   const originalDbPath = process.env.DB_PATH;
   const originalNodeEnv = process.env.NODE_ENV;
-  const testDbPath = `/tmp/test-entities-${Date.now()}.db`;
-  process.env.DB_PATH = testDbPath;
+  process.env.DB_PATH = ':memory:';
   process.env.NODE_ENV = 'test';
   
   try {
-    // Clean up any existing test database file
-    const fs = await import('fs');
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath);
-      console.log('🗑️ Cleaned up existing test database file');
-    }
-    
     // Initialize database first
     await initializeDatabase();
   
@@ -124,17 +116,6 @@ async function testMcpService(): Promise<void> {
       console.log('🔌 Database connection closed');
     } catch (err) {
       console.log('⚠️ Could not close database:', err);
-    }
-    
-    // Clean up test database file
-    try {
-      const fs = await import('fs');
-      if (fs.existsSync(testDbPath)) {
-        fs.unlinkSync(testDbPath);
-        console.log('🗑️ Cleaned up test database file');
-      }
-    } catch (err) {
-      console.log('⚠️ Could not clean up test database file:', err);
     }
     
     // Restore original environment variables

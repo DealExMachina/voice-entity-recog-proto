@@ -79,8 +79,8 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
     initializeNewDatabase();
 
     function initializeNewDatabase() {
-      // In test mode, ensure we start with a completely fresh database
-      if (isTestMode && fs.existsSync(dbPath)) {
+      // In test mode with file-based DB, ensure we start with a completely fresh database
+      if (isTestMode && dbPath !== ':memory:' && fs.existsSync(dbPath)) {
         try {
           fs.unlinkSync(dbPath);
           console.log('🗑️ Removed existing test database file for fresh start');
@@ -98,20 +98,6 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
 
         // Create tables
         const createTablesSQL = `
-          -- Drop all tables first in test mode to ensure clean slate
-          ${isTestMode ? `
-          DROP TABLE IF EXISTS scheduled_meetings CASCADE;
-          DROP TABLE IF EXISTS client_communications CASCADE;
-          DROP TABLE IF EXISTS calendar_events CASCADE;
-          DROP TABLE IF EXISTS emails CASCADE;
-          DROP TABLE IF EXISTS entity_relationships CASCADE;
-          DROP TABLE IF EXISTS calendar_accounts CASCADE;
-          DROP TABLE IF EXISTS email_accounts CASCADE;
-          DROP TABLE IF EXISTS personas CASCADE;
-          DROP TABLE IF EXISTS conversations CASCADE;
-          DROP TABLE IF EXISTS entities CASCADE;
-          ` : ''}
-          
           -- Entities table
           CREATE TABLE ${isTestMode ? '' : 'IF NOT EXISTS'} entities (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
