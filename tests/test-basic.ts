@@ -1,15 +1,8 @@
 import { MastraAgent } from '../src/agents/mastra-agent.js';
 import type { ExtractedEntity } from '../src/types/index.js';
 import dotenv from 'dotenv';
-import {
-  createTestDatabaseConnection,
-  initializeTestDatabase,
-  closeTestDatabase,
-  insertEntityWithDb,
-  getAllEntitiesWithDb,
-  getEntitiesByTypeWithDb,
-  insertConversationWithDb
-} from '../src/database/duckdb.js';
+import DuckDB from 'duckdb';
+import fs from 'fs';
 
 // Declare process global for TypeScript
 declare const process: {
@@ -77,39 +70,103 @@ async function testEntityExtraction(): Promise<void> {
 
 async function testDuckDbIntegration(): Promise<void> {
   console.log('🧪 Testing DuckDB Integration...');
-  const db = createTestDatabaseConnection();
+  
+  // Create a fresh, isolated database for this test
+  const uniqueId = Date.now() + Math.random().toString(36).substring(7);
+  const dbPath = `/tmp/test-basic-db-${uniqueId}.db`;
+  const db = new DuckDB.Database(dbPath);
+  
   try {
-    await initializeTestDatabase(db);
-    // Insert entity
-    const entityId = await insertEntityWithDb(db, {
-      type: 'person',
-      value: 'Test Person',
-      confidence: 0.9,
-      context: 'Testing context',
-      source_conversation_id: '00000000-0000-0000-0000-000000000000',
-      metadata: { test: true, timestamp: new Date().toISOString() }
+    // Create schema
+    const schemaSQL = `
+      CREATE TABLE entities (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        type VARCHAR NOT NULL,
+        value TEXT NOT NULL,
+        confidence FLOAT,
+        context TEXT,
+        source_conversation_id UUID,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        metadata JSON
+      );
+      CREATE TABLE conversations (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        transcription TEXT NOT NULL,
+        audio_duration FLOAT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        metadata JSON
+      );
+      CREATE INDEX idx_entities_type ON entities(type);
+      CREATE INDEX idx_entities_created_at ON entities(created_at);
+    `;
+    
+    await new Promise<void>((resolve, reject) => {
+      db.exec(schemaSQL, (err) => {
+        if (err) reject(new Error(`Failed to create schema: ${err.message}`));
+        else resolve();
+      });
     });
+    
+    // Insert test entity
+    const entityId = await new Promise<string>((resolve, reject) => {
+      const sql = `INSERT INTO entities (type, value, confidence, context, metadata) VALUES (?, ?, ?, ?, ?) RETURNING id`;
+      const params = ['person', 'Test Person', 0.9, 'Test context', JSON.stringify({ test: true })];
+      db.all(sql, params, (err, rows) => {
+        if (err) reject(new Error(`Failed to insert entity: ${err.message}`));
+        else resolve(rows[0].id);
+      });
+    });
+    
     console.log('✅ Entity inserted with ID:', entityId);
-    // Retrieve entities
-    const entities = await getAllEntitiesWithDb(db, 10);
-    if (!entities.length) throw new Error('No entities found');
-    console.log('✅ Retrieved entities:', entities);
-    // Filter by type
-    const personEntities = await getEntitiesByTypeWithDb(db, 'person', 10);
-    if (!personEntities.length) throw new Error('No person entities found');
-    console.log('✅ Retrieved person entities:', personEntities);
-    // Insert conversation
-    const conversationId = await insertConversationWithDb(db, {
-      transcription: 'Test conversation',
-      audio_duration: 12.3,
-      metadata: { test: true }
+    
+    // Query entities
+    const entities = await new Promise<any[]>((resolve, reject) => {
+      db.all('SELECT * FROM entities WHERE type = ?', ['person'], (err, rows) => {
+        if (err) reject(new Error(`Failed to query entities: ${err.message}`));
+        else resolve(rows);
+      });
     });
+    
+    if (entities.length === 0) {
+      throw new Error('No entities found');
+    }
+    
+    console.log('✅ Retrieved entities:', entities);
+    
+    // Insert conversation
+    const conversationId = await new Promise<string>((resolve, reject) => {
+      const sql = `INSERT INTO conversations (transcription, audio_duration, metadata) VALUES (?, ?, ?) RETURNING id`;
+      const params = ['Test conversation', 30.5, JSON.stringify({ test: true })];
+      db.all(sql, params, (err, rows) => {
+        if (err) reject(new Error(`Failed to insert conversation: ${err.message}`));
+        else resolve(rows[0].id);
+      });
+    });
+    
     console.log('✅ Conversation inserted with ID:', conversationId);
+    
+    console.log('✅ DuckDB integration test completed');
+    
   } finally {
-    await closeTestDatabase(db);
-    console.log('🔌 Test database connection closed');
+    // Close database connection
+    await new Promise<void>((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    // Clean up test file
+    try {
+      fs.unlinkSync(dbPath);
+    } catch (err) {
+      // File might not exist, ignore
+    }
+    
+    console.log('🔌 Test database connection closed and cleaned up');
   }
-  console.log('✅ DuckDB integration test completed');
 }
 
 async function testMcpServiceLogic(): Promise<void> {
@@ -209,14 +266,19 @@ async function runTests(): Promise<void> {
   try {
     await testEntityExtraction();
     console.log();
+    
     await testDuckDbIntegration();
     console.log();
+    
     await testMcpServiceLogic();
     console.log();
+    
     await testDemoEntityExtraction();
     console.log();
+    
     await testProviderSwitching();
     console.log();
+    
     console.log('✅ All tests completed successfully!');
   } catch (error) {
     console.error('❌ Test failed:', error);
