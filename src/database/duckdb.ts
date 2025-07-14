@@ -543,7 +543,9 @@ export async function deletePersona(id: string): Promise<void> {
 
 // --- TEST-ONLY DB HELPERS ---
 export function createTestDatabaseConnection(): import('duckdb').Database {
-  return new DuckDB.Database(':memory:');
+  const uniqueId = Date.now() + Math.random().toString(36).substring(7);
+  const testDbPath = `/tmp/test-db-${uniqueId}.db`;
+  return new DuckDB.Database(testDbPath);
 }
 
 export async function initializeTestDatabase(db: import('duckdb').Database): Promise<void> {
