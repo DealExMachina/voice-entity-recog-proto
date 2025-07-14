@@ -117,7 +117,7 @@ export class EmailAgent {
         resolve();
       });
 
-      imap.once('error', (err) => {
+      imap.once('error', (err: Error) => {
         reject(err);
       });
 
@@ -324,7 +324,7 @@ export class EmailAgent {
               };
 
               msg.on('body', (stream, info) => {
-                simpleParser(stream, (err, parsed) => {
+                simpleParser(stream, (err: Error | null, parsed: any) => {
                   if (err) {
                     console.error('Error parsing email:', err);
                     return;

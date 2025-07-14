@@ -198,7 +198,7 @@ export class TTSService {
   }
 
   getAvailableVoices(): { provider: string; voices: string[] }[] {
-    const voices = [];
+    const voices: { provider: string; voices: string[] }[] = [];
     
     if (this.openai) {
       voices.push({

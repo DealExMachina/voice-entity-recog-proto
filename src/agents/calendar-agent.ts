@@ -17,7 +17,7 @@ import { MastraAgent } from './mastra-agent.js';
 export class CalendarAgent {
   private config: CalendarAgentConfig;
   private mastraAgent: MastraAgent;
-  private syncInterval?: NodeJS.Timeout;
+  private syncInterval: NodeJS.Timeout | undefined = undefined;
   private isRunning: boolean = false;
 
   constructor(config: CalendarAgentConfig, mastraAgent: MastraAgent) {
@@ -81,7 +81,7 @@ export class CalendarAgent {
     if (this.config.credentials.access_token) {
       oauth2Client.setCredentials({
         access_token: this.config.credentials.access_token,
-        refresh_token: this.config.credentials.refresh_token
+        refresh_token: this.config.credentials.refresh_token || null
       });
     } else {
       throw new Error('Google Calendar access token is required for testing connection');
@@ -152,8 +152,8 @@ export class CalendarAgent {
     );
 
     oauth2Client.setCredentials({
-      access_token: this.config.credentials.access_token,
-      refresh_token: this.config.credentials.refresh_token
+      access_token: this.config.credentials.access_token || null,
+      refresh_token: this.config.credentials.refresh_token || null
     });
 
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
