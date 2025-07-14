@@ -540,3 +540,303 @@ export async function deletePersona(id: string): Promise<void> {
   const sql = `DELETE FROM personas WHERE id = ?`;
   await executeQuery(sql, [id]);
 } 
+
+// Test-specific functions (only used in tests)
+export function createTestDatabaseConnection(): import('duckdb').Database {
+  return new DuckDB.Database(':memory:');
+}
+
+export async function initializeTestDatabase(db: import('duckdb').Database): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // Create tables for test database
+    const createTablesSQL = `
+      -- Entities table
+      CREATE TABLE entities (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        type VARCHAR NOT NULL,
+        value TEXT NOT NULL,
+        confidence FLOAT,
+        context TEXT,
+        source_conversation_id UUID,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        metadata JSON
+      );
+
+      -- Conversations table
+      CREATE TABLE conversations (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        transcription TEXT NOT NULL,
+        audio_duration FLOAT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        metadata JSON
+      );
+
+      -- Personas table
+      CREATE TABLE personas (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        name VARCHAR NOT NULL,
+        description TEXT,
+        voice JSON,
+        personality JSON,
+        expertise JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Entity relationships table
+      CREATE TABLE entity_relationships (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        entity1_id UUID REFERENCES entities(id),
+        entity2_id UUID REFERENCES entities(id),
+        relationship_type VARCHAR,
+        confidence FLOAT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Create indexes for better performance
+      CREATE INDEX idx_entities_type ON entities(type);
+      CREATE INDEX idx_entities_created_at ON entities(created_at);
+      CREATE INDEX idx_conversations_created_at ON conversations(created_at);
+      CREATE INDEX idx_entities_source_conversation ON entities(source_conversation_id);
+      CREATE INDEX idx_personas_name ON personas(name);
+
+      -- Email integration tables
+      CREATE TABLE email_accounts (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        provider VARCHAR NOT NULL,
+        email VARCHAR NOT NULL UNIQUE,
+        display_name VARCHAR,
+        access_token TEXT,
+        refresh_token TEXT,
+        token_expires_at TIMESTAMP,
+        settings JSON,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE emails (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        account_id UUID REFERENCES email_accounts(id),
+        external_id VARCHAR,
+        thread_id VARCHAR,
+        subject VARCHAR,
+        sender VARCHAR,
+        recipients JSON,
+        cc JSON,
+        bcc JSON,
+        body_text TEXT,
+        body_html TEXT,
+        received_at TIMESTAMP,
+        sent_at TIMESTAMP,
+        is_read BOOLEAN DEFAULT false,
+        is_important BOOLEAN DEFAULT false,
+        labels JSON,
+        attachments JSON,
+        metadata JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Calendar integration tables
+      CREATE TABLE calendar_accounts (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        provider VARCHAR NOT NULL,
+        email VARCHAR NOT NULL,
+        display_name VARCHAR,
+        access_token TEXT,
+        refresh_token TEXT,
+        token_expires_at TIMESTAMP,
+        calendar_id VARCHAR,
+        settings JSON,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE calendar_events (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        account_id UUID REFERENCES calendar_accounts(id),
+        external_id VARCHAR,
+        title VARCHAR NOT NULL,
+        description TEXT,
+        location VARCHAR,
+        start_time TIMESTAMP NOT NULL,
+        end_time TIMESTAMP NOT NULL,
+        timezone VARCHAR,
+        attendees JSON,
+        organizer VARCHAR,
+        is_all_day BOOLEAN DEFAULT false,
+        recurrence JSON,
+        status VARCHAR,
+        visibility VARCHAR,
+        metadata JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Client/Entity relationship tracking
+      CREATE TABLE client_communications (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        entity_id UUID REFERENCES entities(id),
+        communication_type VARCHAR NOT NULL,
+        external_id VARCHAR,
+        subject VARCHAR,
+        content TEXT,
+        participants JSON,
+        occurred_at TIMESTAMP,
+        direction VARCHAR,
+        status VARCHAR,
+        metadata JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Meeting scheduling and tracking
+      CREATE TABLE scheduled_meetings (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        title VARCHAR NOT NULL,
+        description TEXT,
+        entity_ids JSON,
+        proposed_times JSON,
+        confirmed_time TIMESTAMP,
+        duration_minutes INTEGER DEFAULT 60,
+        meeting_type VARCHAR,
+        status VARCHAR,
+        calendar_event_id UUID REFERENCES calendar_events(id),
+        email_thread_id VARCHAR,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Create indexes for new tables
+      CREATE INDEX idx_emails_account_id ON emails(account_id);
+      CREATE INDEX idx_emails_received_at ON emails(received_at);
+      CREATE INDEX idx_emails_sender ON emails(sender);
+      CREATE INDEX idx_emails_thread_id ON emails(thread_id);
+      CREATE INDEX idx_calendar_events_account_id ON calendar_events(account_id);
+      CREATE INDEX idx_calendar_events_start_time ON calendar_events(start_time);
+      CREATE INDEX idx_calendar_events_external_id ON calendar_events(external_id);
+      CREATE INDEX idx_client_communications_entity_id ON client_communications(entity_id);
+      CREATE INDEX idx_client_communications_type ON client_communications(communication_type);
+      CREATE INDEX idx_scheduled_meetings_entity_ids ON scheduled_meetings USING GIN(entity_ids);
+      CREATE INDEX idx_scheduled_meetings_status ON scheduled_meetings(status);
+    `;
+
+    console.log('🔨 Creating test database tables...');
+    db.exec(createTablesSQL, (err) => {
+      if (err) {
+        console.error('❌ Failed to create test tables:', err.message);
+        reject(new Error(`Failed to create test tables: ${err.message}`));
+      } else {
+        console.log('📊 Test database tables created successfully');
+        resolve();
+      }
+    });
+  });
+}
+
+// Test-specific database functions that accept a database connection
+export async function executeQueryWithDb<T = unknown>(
+  db: import('duckdb').Database,
+  sql: string, 
+  params: unknown[] = []
+): Promise<T[]> {
+  return new Promise((resolve, reject) => {
+    const callback = (err: Error | null, rows: T[]) => {
+      if (err) {
+        reject(new Error(`Query failed: ${err.message}`));
+      } else {
+        resolve(rows || []);
+      }
+    };
+
+    if (params.length === 0) {
+      db.all(sql, callback);
+    } else {
+      (db.all as any)(sql, ...params, callback);
+    }
+  });
+}
+
+export async function insertEntityWithDb(
+  db: import('duckdb').Database,
+  entity: InsertEntityParams
+): Promise<string> {
+  const sql = `
+    INSERT INTO entities (type, value, confidence, context, source_conversation_id, metadata)
+    VALUES (?, ?, ?, ?, ?, ?)
+    RETURNING id
+  `;
+  
+  const params = [
+    entity.type,
+    entity.value,
+    entity.confidence,
+    entity.context,
+    entity.source_conversation_id,
+    JSON.stringify(entity.metadata || {})
+  ];
+
+  const result = await executeQueryWithDb<{ id: string }>(db, sql, params);
+  
+  if (!result[0]?.id) {
+    throw new Error('Failed to insert entity - no ID returned');
+  }
+  
+  return result[0].id;
+}
+
+export async function getAllEntitiesWithDb(
+  db: import('duckdb').Database,
+  limit: number = 100
+): Promise<Entity[]> {
+  const sql = `
+    SELECT * FROM entities 
+    ORDER BY created_at DESC 
+    LIMIT ?
+  `;
+  return executeQueryWithDb<Entity>(db, sql, [limit]);
+}
+
+export async function getEntitiesByTypeWithDb(
+  db: import('duckdb').Database,
+  type: EntityType, 
+  limit: number = 100
+): Promise<Entity[]> {
+  const sql = `
+    SELECT * FROM entities 
+    WHERE type = ? 
+    ORDER BY created_at DESC 
+    LIMIT ?
+  `;
+  return executeQueryWithDb<Entity>(db, sql, [type, limit]);
+}
+
+export async function insertConversationWithDb(
+  db: import('duckdb').Database,
+  conversation: InsertConversationParams
+): Promise<string> {
+  const sql = `
+    INSERT INTO conversations (transcription, audio_duration, metadata)
+    VALUES (?, ?, ?)
+    RETURNING id
+  `;
+  
+  const params = [
+    conversation.transcription,
+    conversation.audio_duration,
+    JSON.stringify(conversation.metadata || {})
+  ];
+
+  const result = await executeQueryWithDb<{ id: string }>(db, sql, params);
+  
+  if (!result[0]?.id) {
+    throw new Error('Failed to insert conversation - no ID returned');
+  }
+  
+  return result[0].id;
+} 
