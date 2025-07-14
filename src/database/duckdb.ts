@@ -307,7 +307,7 @@ export async function executeQuery<T = unknown>(
       if (err) {
         reject(new Error(`Query failed: ${err.message}`));
       } else {
-        resolve(rows || []);
+        resolve((rows || []) as T[]);
       }
     };
 
@@ -734,7 +734,7 @@ export async function executeQueryWithDb<T = unknown>(db: import('duckdb').Datab
   return new Promise((resolve, reject) => {
     const callback = (err: Error | null, rows: T[]) => {
       if (err) reject(new Error(`Query failed: ${err.message}`));
-      else resolve(rows || []);
+      else resolve((rows || []) as T[]);
     };
     if (params.length === 0) db.all(sql, callback);
     else (db.all as any)(sql, ...params, callback);
