@@ -4,6 +4,17 @@ import { initializeDatabase } from '../src/database/duckdb.js';
 import type { ExtractedEntity } from '../src/types/index.js';
 import dotenv from 'dotenv';
 
+// Declare process global for TypeScript
+declare const process: {
+  env: {
+    OPENAI_API_KEY?: string;
+    DB_PATH?: string;
+    NODE_ENV?: string;
+  };
+  exit: (code?: number) => never;
+  argv: string[];
+};
+
 // Load environment variables
 dotenv.config();
 
@@ -62,9 +73,19 @@ async function testMcpService(): Promise<void> {
   
   // Use a unique database path for testing to avoid conflicts
   const originalDbPath = process.env.DB_PATH;
-  process.env.DB_PATH = `/tmp/test-entities-${Date.now()}.db`;
+  const originalNodeEnv = process.env.NODE_ENV;
+  const testDbPath = `/tmp/test-entities-${Date.now()}.db`;
+  process.env.DB_PATH = testDbPath;
+  process.env.NODE_ENV = 'test';
   
   try {
+    // Clean up any existing test database file
+    const fs = await import('fs');
+    if (fs.existsSync(testDbPath)) {
+      fs.unlinkSync(testDbPath);
+      console.log('🗑️ Cleaned up existing test database file');
+    }
+    
     // Initialize database first
     await initializeDatabase();
   
@@ -96,11 +117,36 @@ async function testMcpService(): Promise<void> {
   
   console.log('✅ MCP service test completed');
   } finally {
-    // Restore original DB_PATH
+    // Close database connection
+    try {
+      const { closeDatabase } = await import('../src/database/duckdb.js');
+      await closeDatabase();
+      console.log('🔌 Database connection closed');
+    } catch (err) {
+      console.log('⚠️ Could not close database:', err);
+    }
+    
+    // Clean up test database file
+    try {
+      const fs = await import('fs');
+      if (fs.existsSync(testDbPath)) {
+        fs.unlinkSync(testDbPath);
+        console.log('🗑️ Cleaned up test database file');
+      }
+    } catch (err) {
+      console.log('⚠️ Could not clean up test database file:', err);
+    }
+    
+    // Restore original environment variables
     if (originalDbPath) {
       process.env.DB_PATH = originalDbPath;
     } else {
       delete process.env.DB_PATH;
+    }
+    if (originalNodeEnv) {
+      process.env.NODE_ENV = originalNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
     }
   }
 }

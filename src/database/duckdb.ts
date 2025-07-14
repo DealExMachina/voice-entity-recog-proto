@@ -9,7 +9,49 @@ import type {
   DatabaseConnection 
 } from '../types/index.js';
 
+// Declare process global for TypeScript
+declare const process: {
+  env: {
+    DB_PATH?: string;
+    NODE_ENV?: string;
+  };
+};
+
 let db: import('duckdb').Database | null = null;
+
+export async function cleanupDatabase(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!db) {
+      resolve();
+      return;
+    }
+
+    // Drop tables in the correct order to avoid foreign key constraint issues
+    const dropTablesSQL = `
+      -- Drop tables that depend on other tables first
+      DROP TABLE IF EXISTS scheduled_meetings CASCADE;
+      DROP TABLE IF EXISTS client_communications CASCADE;
+      DROP TABLE IF EXISTS calendar_events CASCADE;
+      DROP TABLE IF EXISTS emails CASCADE;
+      DROP TABLE IF EXISTS entity_relationships CASCADE;
+      
+      -- Drop independent tables
+      DROP TABLE IF EXISTS calendar_accounts CASCADE;
+      DROP TABLE IF EXISTS email_accounts CASCADE;
+      DROP TABLE IF EXISTS personas CASCADE;
+      DROP TABLE IF EXISTS conversations CASCADE;
+      DROP TABLE IF EXISTS entities CASCADE;
+    `;
+
+    db.exec(dropTablesSQL, (err) => {
+      if (err) {
+        console.warn('Warning: Could not drop all tables:', err.message);
+        // Continue anyway as some tables might not exist
+      }
+      resolve();
+    });
+  });
+}
 
 export async function initializeDatabase(config?: DatabaseConfig): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -21,200 +63,239 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
       fs.mkdirSync(dbDir, { recursive: true });
     }
 
-    // Initialize DuckDB
-    db = new DuckDB.Database(dbPath, (err) => {
-      if (err) {
-        reject(new Error(`Failed to initialize database: ${err.message}`));
+    // If database already exists and we're in test mode, clean it up first
+    const isTestMode = dbPath.includes('test') || process.env.NODE_ENV === 'test';
+    if (isTestMode && fs.existsSync(dbPath)) {
+      console.log(`🧹 Test mode detected, cleaning up existing database: ${dbPath}`);
+      
+      // Close existing connection if any
+      if (db) {
+        console.log('🔌 Closing existing database connection...');
+        db.close(() => {
+          db = null;
+          // Remove the test database file completely
+          try {
+            fs.unlinkSync(dbPath);
+            console.log('🗑️ Removed existing test database file');
+          } catch (err) {
+            console.log('⚠️ Could not remove database file:', err);
+            // File might not exist, continue anyway
+          }
+          initializeNewDatabase();
+        });
         return;
-      }
-
-      // Create tables
-      const createTablesSQL = `
-        -- Entities table
-        CREATE TABLE IF NOT EXISTS entities (
-          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-          type VARCHAR NOT NULL,
-          value TEXT NOT NULL,
-          confidence FLOAT,
-          context TEXT,
-          source_conversation_id UUID,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          metadata JSON
-        );
-
-        -- Conversations table
-        CREATE TABLE IF NOT EXISTS conversations (
-          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-          transcription TEXT NOT NULL,
-          audio_duration FLOAT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          metadata JSON
-        );
-
-        -- Personas table
-        CREATE TABLE IF NOT EXISTS personas (
-          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-          name VARCHAR NOT NULL,
-          description TEXT,
-          voice JSON,
-          personality JSON,
-          expertise JSON,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        -- Entity relationships table
-        CREATE TABLE IF NOT EXISTS entity_relationships (
-          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-          entity1_id UUID REFERENCES entities(id),
-          entity2_id UUID REFERENCES entities(id),
-          relationship_type VARCHAR,
-          confidence FLOAT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        -- Create indexes for better performance
-        CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
-        CREATE INDEX IF NOT EXISTS idx_entities_created_at ON entities(created_at);
-        CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON conversations(created_at);
-        CREATE INDEX IF NOT EXISTS idx_entities_source_conversation ON entities(source_conversation_id);
-        CREATE INDEX IF NOT EXISTS idx_personas_name ON personas(name);
-
-        -- Email integration tables
-        CREATE TABLE IF NOT EXISTS email_accounts (
-          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-          provider VARCHAR NOT NULL, -- 'gmail', 'outlook', 'imap'
-          email VARCHAR NOT NULL UNIQUE,
-          display_name VARCHAR,
-          access_token TEXT,
-          refresh_token TEXT,
-          token_expires_at TIMESTAMP,
-          settings JSON,
-          is_active BOOLEAN DEFAULT true,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS emails (
-          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-          account_id UUID REFERENCES email_accounts(id),
-          external_id VARCHAR, -- Email provider's message ID
-          thread_id VARCHAR,
-          subject VARCHAR,
-          sender VARCHAR,
-          recipients JSON, -- Array of email addresses
-          cc JSON,
-          bcc JSON,
-          body_text TEXT,
-          body_html TEXT,
-          received_at TIMESTAMP,
-          sent_at TIMESTAMP,
-          is_read BOOLEAN DEFAULT false,
-          is_important BOOLEAN DEFAULT false,
-          labels JSON,
-          attachments JSON,
-          metadata JSON,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        -- Calendar integration tables
-        CREATE TABLE IF NOT EXISTS calendar_accounts (
-          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-          provider VARCHAR NOT NULL, -- 'google', 'outlook', 'ical'
-          email VARCHAR NOT NULL,
-          display_name VARCHAR,
-          access_token TEXT,
-          refresh_token TEXT,
-          token_expires_at TIMESTAMP,
-          calendar_id VARCHAR, -- Provider's calendar ID
-          settings JSON,
-          is_active BOOLEAN DEFAULT true,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS calendar_events (
-          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-          account_id UUID REFERENCES calendar_accounts(id),
-          external_id VARCHAR, -- Calendar provider's event ID
-          title VARCHAR NOT NULL,
-          description TEXT,
-          location VARCHAR,
-          start_time TIMESTAMP NOT NULL,
-          end_time TIMESTAMP NOT NULL,
-          timezone VARCHAR,
-          attendees JSON, -- Array of attendee objects
-          organizer VARCHAR,
-          is_all_day BOOLEAN DEFAULT false,
-          recurrence JSON, -- Recurrence rules
-          status VARCHAR, -- 'confirmed', 'tentative', 'cancelled'
-          visibility VARCHAR, -- 'public', 'private', 'default'
-          metadata JSON,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        -- Client/Entity relationship tracking
-        CREATE TABLE IF NOT EXISTS client_communications (
-          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-          entity_id UUID REFERENCES entities(id),
-          communication_type VARCHAR NOT NULL, -- 'email', 'calendar', 'voice', 'meeting'
-          external_id VARCHAR, -- ID from email/calendar system
-          subject VARCHAR,
-          content TEXT,
-          participants JSON, -- Array of participant objects
-          occurred_at TIMESTAMP,
-          direction VARCHAR, -- 'inbound', 'outbound'
-          status VARCHAR, -- 'sent', 'received', 'scheduled', 'completed'
-          metadata JSON,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        -- Meeting scheduling and tracking
-        CREATE TABLE IF NOT EXISTS scheduled_meetings (
-          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-          title VARCHAR NOT NULL,
-          description TEXT,
-          entity_ids JSON, -- Array of related entity IDs
-          proposed_times JSON, -- Array of proposed time slots
-          confirmed_time TIMESTAMP,
-          duration_minutes INTEGER DEFAULT 60,
-          meeting_type VARCHAR, -- 'sales_call', 'demo', 'follow_up', 'discovery'
-          status VARCHAR, -- 'proposed', 'confirmed', 'completed', 'cancelled'
-          calendar_event_id UUID REFERENCES calendar_events(id),
-          email_thread_id VARCHAR,
-          notes TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        -- Create indexes for new tables
-        CREATE INDEX IF NOT EXISTS idx_emails_account_id ON emails(account_id);
-        CREATE INDEX IF NOT EXISTS idx_emails_received_at ON emails(received_at);
-        CREATE INDEX IF NOT EXISTS idx_emails_sender ON emails(sender);
-        CREATE INDEX IF NOT EXISTS idx_emails_thread_id ON emails(thread_id);
-        CREATE INDEX IF NOT EXISTS idx_calendar_events_account_id ON calendar_events(account_id);
-        CREATE INDEX IF NOT EXISTS idx_calendar_events_start_time ON calendar_events(start_time);
-        CREATE INDEX IF NOT EXISTS idx_calendar_events_external_id ON calendar_events(external_id);
-        CREATE INDEX IF NOT EXISTS idx_client_communications_entity_id ON client_communications(entity_id);
-        CREATE INDEX IF NOT EXISTS idx_client_communications_type ON client_communications(communication_type);
-        CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_entity_ids ON scheduled_meetings USING GIN(entity_ids);
-        CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_status ON scheduled_meetings(status);
-      `;
-
-      db!.exec(createTablesSQL, (err) => {
-        if (err) {
-          reject(new Error(`Failed to create tables: ${err.message}`));
-        } else {
-          console.log('📊 Database tables created successfully');
-          resolve();
+      } else {
+        // Remove the test database file completely
+        try {
+          fs.unlinkSync(dbPath);
+          console.log('🗑️ Removed existing test database file');
+        } catch (err) {
+          console.log('⚠️ Could not remove database file:', err);
+          // File might not exist, continue anyway
         }
+      }
+    }
+
+    initializeNewDatabase();
+
+    function initializeNewDatabase() {
+      // Initialize DuckDB
+      db = new DuckDB.Database(dbPath, (err) => {
+        if (err) {
+          reject(new Error(`Failed to initialize database: ${err.message}`));
+          return;
+        }
+
+        // Create tables
+        const createTablesSQL = `
+          -- Entities table
+          CREATE TABLE IF NOT EXISTS entities (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            type VARCHAR NOT NULL,
+            value TEXT NOT NULL,
+            confidence FLOAT,
+            context TEXT,
+            source_conversation_id UUID,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            metadata JSON
+          );
+
+          -- Conversations table
+          CREATE TABLE IF NOT EXISTS conversations (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            transcription TEXT NOT NULL,
+            audio_duration FLOAT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            metadata JSON
+          );
+
+          -- Personas table
+          CREATE TABLE IF NOT EXISTS personas (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            description TEXT,
+            voice JSON,
+            personality JSON,
+            expertise JSON,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+          -- Entity relationships table
+          CREATE TABLE IF NOT EXISTS entity_relationships (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            entity1_id UUID REFERENCES entities(id),
+            entity2_id UUID REFERENCES entities(id),
+            relationship_type VARCHAR,
+            confidence FLOAT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+          -- Create indexes for better performance
+          CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
+          CREATE INDEX IF NOT EXISTS idx_entities_created_at ON entities(created_at);
+          CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON conversations(created_at);
+          CREATE INDEX IF NOT EXISTS idx_entities_source_conversation ON entities(source_conversation_id);
+          CREATE INDEX IF NOT EXISTS idx_personas_name ON personas(name);
+
+          -- Email integration tables
+          CREATE TABLE IF NOT EXISTS email_accounts (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            provider VARCHAR NOT NULL, -- 'gmail', 'outlook', 'imap'
+            email VARCHAR NOT NULL UNIQUE,
+            display_name VARCHAR,
+            access_token TEXT,
+            refresh_token TEXT,
+            token_expires_at TIMESTAMP,
+            settings JSON,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+          CREATE TABLE IF NOT EXISTS emails (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            account_id UUID REFERENCES email_accounts(id),
+            external_id VARCHAR, -- Email provider's message ID
+            thread_id VARCHAR,
+            subject VARCHAR,
+            sender VARCHAR,
+            recipients JSON, -- Array of email addresses
+            cc JSON,
+            bcc JSON,
+            body_text TEXT,
+            body_html TEXT,
+            received_at TIMESTAMP,
+            sent_at TIMESTAMP,
+            is_read BOOLEAN DEFAULT false,
+            is_important BOOLEAN DEFAULT false,
+            labels JSON,
+            attachments JSON,
+            metadata JSON,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+          -- Calendar integration tables
+          CREATE TABLE IF NOT EXISTS calendar_accounts (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            provider VARCHAR NOT NULL, -- 'google', 'outlook', 'ical'
+            email VARCHAR NOT NULL,
+            display_name VARCHAR,
+            access_token TEXT,
+            refresh_token TEXT,
+            token_expires_at TIMESTAMP,
+            calendar_id VARCHAR, -- Provider's calendar ID
+            settings JSON,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+          CREATE TABLE IF NOT EXISTS calendar_events (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            account_id UUID REFERENCES calendar_accounts(id),
+            external_id VARCHAR, -- Calendar provider's event ID
+            title VARCHAR NOT NULL,
+            description TEXT,
+            location VARCHAR,
+            start_time TIMESTAMP NOT NULL,
+            end_time TIMESTAMP NOT NULL,
+            timezone VARCHAR,
+            attendees JSON, -- Array of attendee objects
+            organizer VARCHAR,
+            is_all_day BOOLEAN DEFAULT false,
+            recurrence JSON, -- Recurrence rules
+            status VARCHAR, -- 'confirmed', 'tentative', 'cancelled'
+            visibility VARCHAR, -- 'public', 'private', 'default'
+            metadata JSON,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+          -- Client/Entity relationship tracking
+          CREATE TABLE IF NOT EXISTS client_communications (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            entity_id UUID REFERENCES entities(id),
+            communication_type VARCHAR NOT NULL, -- 'email', 'calendar', 'voice', 'meeting'
+            external_id VARCHAR, -- ID from email/calendar system
+            subject VARCHAR,
+            content TEXT,
+            participants JSON, -- Array of participant objects
+            occurred_at TIMESTAMP,
+            direction VARCHAR, -- 'inbound', 'outbound'
+            status VARCHAR, -- 'sent', 'received', 'scheduled', 'completed'
+            metadata JSON,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+          -- Meeting scheduling and tracking
+          CREATE TABLE IF NOT EXISTS scheduled_meetings (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            title VARCHAR NOT NULL,
+            description TEXT,
+            entity_ids JSON, -- Array of related entity IDs
+            proposed_times JSON, -- Array of proposed time slots
+            confirmed_time TIMESTAMP,
+            duration_minutes INTEGER DEFAULT 60,
+            meeting_type VARCHAR, -- 'sales_call', 'demo', 'follow_up', 'discovery'
+            status VARCHAR, -- 'proposed', 'confirmed', 'completed', 'cancelled'
+            calendar_event_id UUID REFERENCES calendar_events(id),
+            email_thread_id VARCHAR,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+          -- Create indexes for new tables
+          CREATE INDEX IF NOT EXISTS idx_emails_account_id ON emails(account_id);
+          CREATE INDEX IF NOT EXISTS idx_emails_received_at ON emails(received_at);
+          CREATE INDEX IF NOT EXISTS idx_emails_sender ON emails(sender);
+          CREATE INDEX IF NOT EXISTS idx_emails_thread_id ON emails(thread_id);
+          CREATE INDEX IF NOT EXISTS idx_calendar_events_account_id ON calendar_events(account_id);
+          CREATE INDEX IF NOT EXISTS idx_calendar_events_start_time ON calendar_events(start_time);
+          CREATE INDEX IF NOT EXISTS idx_calendar_events_external_id ON calendar_events(external_id);
+          CREATE INDEX IF NOT EXISTS idx_client_communications_entity_id ON client_communications(entity_id);
+          CREATE INDEX IF NOT EXISTS idx_client_communications_type ON client_communications(communication_type);
+          CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_entity_ids ON scheduled_meetings USING GIN(entity_ids);
+          CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_status ON scheduled_meetings(status);
+        `;
+
+        console.log('🔨 Creating database tables...');
+        db!.exec(createTablesSQL, (err) => {
+          if (err) {
+            console.error('❌ Failed to create tables:', err.message);
+            reject(new Error(`Failed to create tables: ${err.message}`));
+          } else {
+            console.log('📊 Database tables created successfully');
+            resolve();
+          }
+        });
       });
-    });
+    }
   });
 }
 
