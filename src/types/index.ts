@@ -11,7 +11,7 @@ export interface Entity {
   updated_at?: string;
 }
 
-export type EntityType = 'financial' | 'date' | 'organization' | 'person' | 'location' | 'product' | 'contact';
+export type EntityType = 'financial' | 'date' | 'organization' | 'person' | 'location' | 'product' | 'contact' | 'opportunity';
 
 export interface EntityMetadata {
   provider: AIProvider;
@@ -119,6 +119,92 @@ export interface DatabaseConfig {
 export interface DatabaseConnection {
   query: <T = unknown>(sql: string, params?: Record<string, unknown>) => Promise<T[]>;
   close: () => Promise<void>;
+}
+
+// Sales Opportunity Types
+export interface Opportunity {
+  id: string;
+  title: string;
+  description?: string;
+  client_organization?: string;
+  contact_person?: string;
+  estimated_value?: number;
+  currency: string;
+  probability: number;
+  stage: OpportunityStage;
+  decision_date?: string;
+  status: OpportunityStatus;
+  source_conversation_id?: string;
+  context_summary?: string;
+  created_at?: string;
+  updated_at?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export type OpportunityStage = 'discovery' | 'qualification' | 'proposal' | 'negotiation' | 'closing' | 'closed_won' | 'closed_lost';
+export type OpportunityStatus = 'active' | 'dormant' | 'closed';
+
+export interface OpportunityUpdate {
+  id: string;
+  opportunity_id: string;
+  conversation_id: string;
+  update_type: string;
+  summary?: string;
+  confidence?: number;
+  created_at?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SalesInteraction {
+  id: string;
+  conversation_id: string;
+  opportunity_id?: string;
+  agent_analysis: string;
+  agent_response: string;
+  follow_up_questions: string[];
+  confidence_score: number;
+  created_at?: string;
+  metadata?: Record<string, unknown>;
+}
+
+// Sales Analysis Types
+export interface SalesAnalysis {
+  opportunity_detected: boolean;
+  confidence: number;
+  key_insights: string[];
+  missing_information: string[];
+  suggested_questions: string[];
+  opportunity_summary?: OpportunitySummary;
+  risk_factors: string[];
+  next_actions: string[];
+}
+
+export interface OpportunitySummary {
+  title: string;
+  client: string;
+  value: number;
+  currency: string;
+  timeline: string;
+  probability: number;
+  stage: OpportunityStage;
+}
+
+// Conversational Agent Types
+export interface ConversationalResponse {
+  analysis: SalesAnalysis;
+  response_text: string;
+  audio_response?: Buffer; // TTS audio data
+  follow_up_questions: string[];
+  suggested_actions: string[];
+  opportunity_match?: OpportunityMatch;
+}
+
+export interface OpportunityMatch {
+  matched: boolean;
+  existing_opportunity?: Opportunity;
+  similarity_score?: number;
+  merge_recommended?: boolean;
+  differences?: string[];
 }
 
 // MCP Types

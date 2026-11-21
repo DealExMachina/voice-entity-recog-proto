@@ -151,7 +151,7 @@ async function testProviderSwitching(): Promise<void> {
   console.log('✅ Provider switching test completed');
 }
 
-async function runTests(): Promise<void> {
+export async function runTests(): Promise<void> {
   console.log('🚀 Starting Basic Tests\n');
   
   try {

@@ -9,7 +9,9 @@ import { fileURLToPath } from 'url';
 
 import { initializeDatabase } from './database/duckdb.js';
 import { MastraAgent } from './agents/mastra-agent.js';
+import { ConversationAgent } from './agents/conversation-agent.js';
 import { McpService } from './services/mcp-service.js';
+import { OpportunityService } from './services/opportunity-service.js';
 import { generalLimiter, healthLimiter } from './middleware/rateLimiter.js';
 import apiRoutes from './routes/api.js';
 import type { 
@@ -61,7 +63,9 @@ app.get('/health', (req: Request, res: Response): void => {
       services: [
         { name: 'database', status: 'initializing', lastCheck: new Date().toISOString() },
         { name: 'mcp', status: 'initializing', lastCheck: new Date().toISOString() },
-        { name: 'mastra', status: 'initializing', lastCheck: new Date().toISOString() }
+        { name: 'mastra', status: 'initializing', lastCheck: new Date().toISOString() },
+        { name: 'conversation', status: 'initializing', lastCheck: new Date().toISOString() },
+        { name: 'opportunities', status: 'initializing', lastCheck: new Date().toISOString() }
       ],
       version: '1.0.0'
     });
@@ -75,7 +79,9 @@ app.get('/health', (req: Request, res: Response): void => {
     services: [
       { name: 'database', status: 'up', lastCheck: new Date().toISOString() },
       { name: 'mcp', status: 'up', lastCheck: new Date().toISOString() },
-      { name: 'mastra', status: 'up', lastCheck: new Date().toISOString() }
+      { name: 'mastra', status: 'up', lastCheck: new Date().toISOString() },
+      { name: 'conversation', status: 'up', lastCheck: new Date().toISOString() },
+      { name: 'opportunities', status: 'up', lastCheck: new Date().toISOString() }
     ],
     version: '1.0.0'
   });
@@ -86,7 +92,9 @@ app.use('/api', generalLimiter);
 
 // Initialize services
 let mastraAgent: MastraAgent;
+let conversationAgent: ConversationAgent;
 let mcpService: McpService;
+let opportunityService: OpportunityService;
 let serverReady = false; // Flag to track when server is completely ready
 
 async function initializeServices(): Promise<void> {
@@ -105,9 +113,23 @@ async function initializeServices(): Promise<void> {
     await mastraAgent.initialize();
     console.log('✅ Mastra agent initialized');
 
+    // Initialize Conversation agent
+    conversationAgent = new ConversationAgent();
+    await conversationAgent.initialize();
+    console.log('💬 Conversation agent initialized');
+
+    // Initialize Opportunity service
+    opportunityService = new OpportunityService();
+    console.log('💼 Opportunity service initialized');
+
+    // Start periodic cleanup for conversation agent
+    conversationAgent.startPeriodicCleanup();
+
     // Make services available to routes
     app.locals.mastraAgent = mastraAgent;
     app.locals.mcpService = mcpService;
+    app.locals.conversationAgent = conversationAgent;
+    app.locals.opportunityService = opportunityService;
 
   } catch (error) {
     console.error('❌ Failed to initialize services:', error);
@@ -115,7 +137,7 @@ async function initializeServices(): Promise<void> {
   }
 }
 
-// WebSocket connections for real-time updates
+// WebSocket connections for real-time sales conversation analysis
 wss.on('connection', (ws: WebSocket) => {
   console.log('📡 New WebSocket connection');
   
@@ -126,7 +148,7 @@ wss.on('connection', (ws: WebSocket) => {
       if (data.type === 'voice_data') {
         const voiceData = data as VoiceDataMessage;
         
-        // Handle real-time voice data
+        // Handle real-time voice data with full conversational analysis
         const audioBuffer = Buffer.from(voiceData.audio, 'base64');
         const transcription = await mastraAgent.transcribe(audioBuffer);
         const entities = await mastraAgent.extractEntities(transcription);
@@ -146,16 +168,59 @@ wss.on('connection', (ws: WebSocket) => {
         if (conversationResult.conversationId) {
           await mcpService.storeEntities(entities, conversationResult.conversationId);
         }
-        
-        // Send results back to client
-        const response: EntitiesExtractedMessage = {
-          type: 'entities_extracted',
-          transcription,
-          entities,
-          conversationId: conversationResult.conversationId || ''
-        };
-        
-        ws.send(JSON.stringify(response));
+
+        // Get conversation history for context
+        const conversationHistory = await conversationAgent.getConversationHistory(
+          conversationResult.conversationId || ''
+        );
+
+        // Process with conversational sales agent
+        if (conversationResult.conversationId) {
+          const conversationContext = {
+            conversationId: conversationResult.conversationId,
+            transcription,
+            entities,
+            previousInteractions: conversationHistory.map(h => h.content),
+            sessionHistory: conversationHistory
+          };
+
+          const salesResponse = await conversationAgent.processConversation(conversationContext);
+          
+          // Send comprehensive response back to client
+          const response = {
+            type: 'sales_analysis_complete',
+            transcription,
+            entities,
+            conversationId: conversationResult.conversationId,
+            sales_analysis: salesResponse.analysis,
+            agent_response: salesResponse.response_text,
+            follow_up_questions: salesResponse.follow_up_questions,
+            suggested_actions: salesResponse.suggested_actions,
+            opportunity_match: salesResponse.opportunity_match,
+            has_audio: !!salesResponse.audio_response
+          };
+          
+          ws.send(JSON.stringify(response));
+
+          // Send TTS audio separately if available
+          if (salesResponse.audio_response) {
+            ws.send(JSON.stringify({
+              type: 'tts_audio',
+              audio_data: salesResponse.audio_response.toString('base64'),
+              format: 'mp3'
+            }));
+          }
+        } else {
+          // Fallback to basic entity extraction if conversation storage failed
+          const response: EntitiesExtractedMessage = {
+            type: 'entities_extracted',
+            transcription,
+            entities,
+            conversationId: ''
+          };
+          
+          ws.send(JSON.stringify(response));
+        }
       }
     } catch (error) {
       console.error('WebSocket error:', error);

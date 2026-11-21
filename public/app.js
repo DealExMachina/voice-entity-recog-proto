@@ -7,6 +7,11 @@ class MastraVoiceApp {
         this.currentAiProvider = 'openai'; // Set default fallback value
         this.ws = null;
         
+        // Text-to-speech setup
+        this.speechSynthesis = window.speechSynthesis;
+        this.voiceAssistant = null;
+        this.isWaitingForUserInput = false;
+        
         // Initialize app asynchronously without blocking
         this.initializeApp().catch(error => {
             console.error('Failed to initialize app:', error);
@@ -21,6 +26,9 @@ class MastraVoiceApp {
             
             // Set up event listeners first (non-blocking)
             this.setupEventListeners();
+            
+            // Initialize voice assistant
+            await this.initializeVoiceAssistant();
             
             // Load AI status and providers (with timeout)
             const initPromises = [
@@ -39,12 +47,95 @@ class MastraVoiceApp {
             ]);
             
             console.log('✅ App initialized successfully with AI provider:', this.currentAiProvider);
+            
+            // Welcome the user with voice assistant
+            setTimeout(() => {
+                this.welcomeUser();
+            }, 1000); // Small delay to ensure everything is loaded
+            
         } catch (error) {
             console.warn('⚠️ App initialization had issues:', error.message);
             // Ensure we have a fallback provider
             this.currentAiProvider = this.currentAiProvider || 'openai';
             console.log('🔄 Using fallback AI provider:', this.currentAiProvider);
+            
+            // Still try to welcome user even if other init failed
+            setTimeout(() => {
+                this.welcomeUser();
+            }, 1000);
         }
+    }
+
+    async initializeVoiceAssistant() {
+        try {
+            // Wait for voices to be loaded
+            if (this.speechSynthesis.getVoices().length === 0) {
+                await new Promise(resolve => {
+                    this.speechSynthesis.addEventListener('voiceschanged', resolve, { once: true });
+                });
+            }
+            
+            // Find the best French female voice
+            const voices = this.speechSynthesis.getVoices();
+            console.log('🎤 Available voices:', voices.map(v => `${v.name} (${v.lang})`));
+            
+            // Prefer French voices, then female voices
+            this.voiceAssistant = voices.find(voice => 
+                voice.lang.startsWith('fr') && voice.name.toLowerCase().includes('fem')
+            ) || voices.find(voice => 
+                voice.lang.startsWith('fr')
+            ) || voices.find(voice => 
+                voice.name.toLowerCase().includes('fem')
+            ) || voices[0];
+            
+            console.log('🗣️ Selected voice assistant:', this.voiceAssistant?.name, this.voiceAssistant?.lang);
+            
+        } catch (error) {
+            console.warn('⚠️ Voice assistant initialization failed:', error);
+        }
+    }
+
+    speak(text, callback = null) {
+        if (!this.speechSynthesis || !this.voiceAssistant) {
+            console.warn('⚠️ Text-to-speech not available');
+            if (callback) callback();
+            return;
+        }
+
+        // Cancel any ongoing speech
+        this.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.voice = this.voiceAssistant;
+        utterance.rate = 0.9; // Slightly slower for clarity
+        utterance.pitch = 1.1; // Slightly higher for friendliness
+        utterance.volume = 0.8;
+
+        utterance.onend = () => {
+            console.log('🗣️ Finished saying:', text);
+            if (callback) callback();
+        };
+
+        utterance.onerror = (error) => {
+            console.error('🗣️ Speech error:', error);
+            if (callback) callback();
+        };
+
+        console.log('🗣️ Assistant saying:', text);
+        this.speechSynthesis.speak(utterance);
+    }
+
+    welcomeUser() {
+        const welcomeMessage = "Bonjour je suis votre assistante personnelle, que voulez-vous faire ?";
+        
+        this.speak(welcomeMessage, () => {
+            // After welcome, automatically start recording session
+            setTimeout(() => {
+                console.log('🎙️ Starting automatic recording session...');
+                this.isWaitingForUserInput = true;
+                this.startRecording();
+            }, 1000);
+        });
     }
 
     setupEventListeners() {
@@ -133,9 +224,90 @@ class MastraVoiceApp {
                 this.displayEntities(data.entities);
                 this.showToast('Entities extracted successfully!');
                 break;
-            case 'error':
-                this.showToast(`Error: ${data.message}`, 'error');
+            case 'sales_analysis_complete':
+                this.handleSalesAnalysisComplete(data);
                 break;
+            case 'tts_audio':
+                this.playTTSAudio(data.audio_data, data.format);
+                break;
+            case 'error':
+                this.showToast(`Error: ${data.error}`, 'error');
+                break;
+        }
+    }
+
+    async handleSalesAnalysisComplete(data) {
+        console.log('📊 Sales analysis complete:', data);
+        
+        // Display transcription and entities as before
+        this.displayTranscription(data.transcription);
+        this.displayEntities(data.entities);
+        
+        // Display sales analysis
+        this.displaySalesAnalysis(data.sales_analysis);
+        
+        // Display agent response
+        this.displayAgentResponse(data.agent_response);
+        
+        // Display follow-up questions
+        this.displayFollowUpQuestions(data.follow_up_questions);
+        
+        // Display opportunity information if available
+        if (data.opportunity_match && data.opportunity_match.matched) {
+            this.displayOpportunityMatch(data.opportunity_match);
+        }
+        
+        // Show success notification
+        const confidence = Math.round(data.sales_analysis.confidence * 100);
+        this.showToast(`Sales analysis complete (${confidence}% confidence)${data.has_audio ? ' - Audio response ready' : ''}`, 'success');
+        
+        // Speak the agent response if TTS is not available via WebSocket
+        if (!data.has_audio && data.agent_response) {
+            setTimeout(() => {
+                this.speak(data.agent_response);
+            }, 1000);
+        }
+    }
+
+    playTTSAudio(audioData, format = 'mp3') {
+        try {
+            console.log('🔊 Playing TTS audio response...');
+            
+            // Convert base64 to blob
+            const byteCharacters = atob(audioData);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const audioBlob = new Blob([byteArray], { type: `audio/${format}` });
+            
+            // Create audio URL and play
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
+            
+            audio.onloadeddata = () => {
+                console.log('🎵 TTS audio loaded, playing...');
+                audio.play().catch(error => {
+                    console.error('Failed to play TTS audio:', error);
+                    this.showToast('Failed to play audio response', 'error');
+                });
+            };
+            
+            audio.onended = () => {
+                console.log('🎵 TTS audio finished');
+                URL.revokeObjectURL(audioUrl);
+            };
+            
+            audio.onerror = (error) => {
+                console.error('TTS audio error:', error);
+                URL.revokeObjectURL(audioUrl);
+                this.showToast('Audio playback error', 'error');
+            };
+            
+        } catch (error) {
+            console.error('Failed to process TTS audio:', error);
+            this.showToast('Failed to process audio response', 'error');
         }
     }
 
@@ -477,7 +649,17 @@ class MastraVoiceApp {
             
             // Update UI
             this.updateRecordingUI('idle');
-            this.showProcessingState('Processing audio...');
+            
+            // Voice assistant announces analysis
+            if (this.isWaitingForUserInput) {
+                const analysisMessage = "Je vais maintenant analyser ce que vous m'avez dit";
+                this.speak(analysisMessage, () => {
+                    this.showProcessingState('🧠 L\'assistante analyse votre message...');
+                });
+                this.isWaitingForUserInput = false;
+            } else {
+                this.showProcessingState('Processing audio...');
+            }
         }
     }
 
@@ -606,6 +788,9 @@ class MastraVoiceApp {
             console.error('🚨 Processing error:', error);
             this.showToast(`Processing failed: ${error.message}`, 'error');
             this.hideProcessingState();
+            
+            // Voice assistant can acknowledge the error
+            this.speak("Désolée, j'ai rencontré un problème. Pouvez-vous essayer à nouveau ?");
         }
     }
 
@@ -680,6 +865,17 @@ class MastraVoiceApp {
                 this.displayAnalysis(result.data.analysis);
                 this.loadDatabaseEntities(); // Refresh database view
                 
+                // Voice assistant announces completion
+                const entityCount = result.data.entities?.length || 0;
+                let completionMessage;
+                if (entityCount > 0) {
+                    completionMessage = `Parfait ! J'ai identifié ${entityCount} élément${entityCount > 1 ? 's' : ''} important${entityCount > 1 ? 's' : ''} dans votre message.`;
+                } else {
+                    completionMessage = "J'ai bien analysé votre message. Que souhaitez-vous faire maintenant ?";
+                }
+                
+                this.speak(completionMessage);
+                
                 // Show success with provider info
                 const providerInfo = provider === 'demo' ? 'Demo Mode' : 
                                    provider === 'openai' ? 'OpenAI' : 'Mistral AI';
@@ -688,7 +884,7 @@ class MastraVoiceApp {
                 // Clear processing state after success
                 setTimeout(() => {
                     this.hideProcessingState();
-                }, 2000);
+                }, 3000); // Longer delay to let voice assistant speak
             } else {
                 throw new Error(result.message || result.error || 'Processing failed');
             }
@@ -696,6 +892,8 @@ class MastraVoiceApp {
         } catch (error) {
             console.error('Upload error:', error);
             this.showToast(`Upload failed: ${error.message}`, 'error');
+            // Voice assistant can acknowledge the error
+            this.speak("Désolée, j'ai eu un problème avec l'analyse. Voulez-vous réessayer ?");
         } finally {
             this.isProcessing = false;
             // Don't hide processing state immediately if successful - let the success animation play
@@ -1274,9 +1472,249 @@ class MastraVoiceApp {
         this.showProcessingState('Processing uploaded audio file...');
         await this.uploadAudio(file, file.name);
     }
+
+    displaySalesAnalysis(analysis) {
+        // Create or get sales analysis container
+        let salesContainer = document.getElementById('salesAnalysisContainer');
+        if (!salesContainer) {
+            salesContainer = document.createElement('div');
+            salesContainer.id = 'salesAnalysisContainer';
+            salesContainer.className = 'mb-6';
+            
+            // Insert after transcription panel
+            const transcriptionPanel = document.getElementById('transcriptionPanel');
+            if (transcriptionPanel && transcriptionPanel.nextSibling) {
+                transcriptionPanel.parentNode.insertBefore(salesContainer, transcriptionPanel.nextSibling);
+            } else {
+                document.querySelector('.main-content').appendChild(salesContainer);
+            }
+        }
+        
+        salesContainer.style.display = 'block';
+        
+        const opportunityHtml = analysis.opportunity_detected ? `
+            <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <h4 class="text-green-800 font-medium text-sm mb-2">🎯 Sales Opportunity Detected</h4>
+                ${analysis.opportunity_summary ? `
+                    <div class="grid grid-cols-2 gap-3 text-xs">
+                        <div><span class="text-green-600">Client:</span> <strong>${analysis.opportunity_summary.client}</strong></div>
+                        <div><span class="text-green-600">Value:</span> <strong>${analysis.opportunity_summary.currency}${analysis.opportunity_summary.value?.toLocaleString() || 'TBD'}</strong></div>
+                        <div><span class="text-green-600">Stage:</span> <strong>${analysis.opportunity_summary.stage}</strong></div>
+                        <div><span class="text-green-600">Timeline:</span> <strong>${analysis.opportunity_summary.timeline}</strong></div>
+                    </div>
+                ` : ''}
+            </div>
+        ` : '';
+        
+        const insightsHtml = analysis.key_insights.map(insight => 
+            `<li class="text-slate-600 text-sm">💡 ${insight}</li>`
+        ).join('');
+        
+        const risksHtml = analysis.risk_factors.map(risk => 
+            `<li class="text-red-600 text-sm">⚠️ ${risk}</li>`
+        ).join('');
+        
+        const actionsHtml = analysis.next_actions.map(action => 
+            `<li class="text-blue-600 text-sm">👉 ${action}</li>`
+        ).join('');
+        
+        salesContainer.innerHTML = `
+            <div class="glass-effect rounded-2xl p-6 border border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50">
+                <div class="flex items-center space-x-3 mb-4">
+                    <i class="w-5 h-5 text-purple-600">💼</i>
+                    <h2 class="text-lg font-medium text-purple-800">Sales Analysis</h2>
+                    <span class="px-2 py-1 rounded-full text-xs font-medium ${analysis.opportunity_detected ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}">
+                        ${Math.round(analysis.confidence * 100)}% confidence
+                    </span>
+                </div>
+                
+                ${opportunityHtml}
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    ${analysis.key_insights.length > 0 ? `
+                        <div>
+                            <h4 class="text-purple-700 font-medium mb-2">Key Insights</h4>
+                            <ul class="space-y-1">${insightsHtml}</ul>
+                        </div>
+                    ` : ''}
+                    
+                    ${analysis.risk_factors.length > 0 ? `
+                        <div>
+                            <h4 class="text-red-700 font-medium mb-2">Risk Factors</h4>
+                            <ul class="space-y-1">${risksHtml}</ul>
+                        </div>
+                    ` : ''}
+                    
+                    ${analysis.next_actions.length > 0 ? `
+                        <div>
+                            <h4 class="text-blue-700 font-medium mb-2">Next Actions</h4>
+                            <ul class="space-y-1">${actionsHtml}</ul>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    displayAgentResponse(response) {
+        // Create or get agent response container
+        let responseContainer = document.getElementById('agentResponseContainer');
+        if (!responseContainer) {
+            responseContainer = document.createElement('div');
+            responseContainer.id = 'agentResponseContainer';
+            responseContainer.className = 'mb-6';
+            
+            // Insert after sales analysis
+            const salesContainer = document.getElementById('salesAnalysisContainer');
+            if (salesContainer && salesContainer.nextSibling) {
+                salesContainer.parentNode.insertBefore(responseContainer, salesContainer.nextSibling);
+            } else {
+                document.querySelector('.main-content').appendChild(responseContainer);
+            }
+        }
+        
+        responseContainer.style.display = 'block';
+        responseContainer.innerHTML = `
+            <div class="glass-effect rounded-2xl p-6 border border-blue-200 bg-gradient-to-br from-blue-50 to-cyan-50">
+                <div class="flex items-center space-x-3 mb-4">
+                    <i class="w-5 h-5 text-blue-600">🤖</i>
+                    <h2 class="text-lg font-medium text-blue-800">AI Assistant Response</h2>
+                </div>
+                <div class="text-slate-700 leading-relaxed">
+                    ${response}
+                </div>
+            </div>
+        `;
+    }
+
+    displayFollowUpQuestions(questions) {
+        if (!questions || questions.length === 0) return;
+        
+        // Create or get questions container
+        let questionsContainer = document.getElementById('followUpQuestionsContainer');
+        if (!questionsContainer) {
+            questionsContainer = document.createElement('div');
+            questionsContainer.id = 'followUpQuestionsContainer';
+            questionsContainer.className = 'mb-6';
+            
+            // Insert after agent response
+            const responseContainer = document.getElementById('agentResponseContainer');
+            if (responseContainer && responseContainer.nextSibling) {
+                responseContainer.parentNode.insertBefore(questionsContainer, responseContainer.nextSibling);
+            } else {
+                document.querySelector('.main-content').appendChild(questionsContainer);
+            }
+        }
+        
+        questionsContainer.style.display = 'block';
+        
+        const questionsHtml = questions.map((question, index) => `
+            <button class="w-full text-left p-3 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-sm" 
+                    onclick="app.handleFollowUpQuestion('${question.replace(/'/g, "\\'")}')">
+                <span class="text-blue-600 font-medium">${index + 1}.</span> ${question}
+            </button>
+        `).join('');
+        
+        questionsContainer.innerHTML = `
+            <div class="glass-effect rounded-2xl p-6 border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50">
+                <div class="flex items-center space-x-3 mb-4">
+                    <i class="w-5 h-5 text-amber-600">❓</i>
+                    <h2 class="text-lg font-medium text-amber-800">Follow-up Questions</h2>
+                </div>
+                <div class="space-y-2">
+                    ${questionsHtml}
+                </div>
+                <p class="text-xs text-amber-600 mt-3">Click a question to use it as your next input</p>
+            </div>
+        `;
+    }
+
+    displayOpportunityMatch(opportunityMatch) {
+        if (!opportunityMatch || !opportunityMatch.matched) return;
+        
+        // Create or get opportunity container
+        let opportunityContainer = document.getElementById('opportunityMatchContainer');
+        if (!opportunityContainer) {
+            opportunityContainer = document.createElement('div');
+            opportunityContainer.id = 'opportunityMatchContainer';
+            opportunityContainer.className = 'mb-6';
+            
+            // Insert after follow-up questions
+            const questionsContainer = document.getElementById('followUpQuestionsContainer');
+            if (questionsContainer && questionsContainer.nextSibling) {
+                questionsContainer.parentNode.insertBefore(opportunityContainer, questionsContainer.nextSibling);
+            } else {
+                document.querySelector('.main-content').appendChild(opportunityContainer);
+            }
+        }
+        
+        opportunityContainer.style.display = 'block';
+        
+        const opportunity = opportunityMatch.existing_opportunity;
+        const similarity = Math.round((opportunityMatch.similarity_score || 0) * 100);
+        
+        const differencesHtml = opportunityMatch.differences && opportunityMatch.differences.length > 0 ? `
+            <div class="mt-3 p-2 bg-yellow-50 rounded">
+                <h5 class="text-yellow-800 font-medium text-xs mb-1">Differences noted:</h5>
+                <ul class="text-yellow-700 text-xs space-y-1">
+                    ${opportunityMatch.differences.map(diff => `<li>• ${diff}</li>`).join('')}
+                </ul>
+            </div>
+        ` : '';
+        
+        opportunityContainer.innerHTML = `
+            <div class="glass-effect rounded-2xl p-6 border border-green-200 bg-gradient-to-br from-green-50 to-emerald-50">
+                <div class="flex items-center space-x-3 mb-4">
+                    <i class="w-5 h-5 text-green-600">🎯</i>
+                    <h2 class="text-lg font-medium text-green-800">Opportunity Match Found</h2>
+                    <span class="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        ${similarity}% match
+                    </span>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div><span class="text-green-600">Client:</span> <strong>${opportunity.client_organization || 'N/A'}</strong></div>
+                    <div><span class="text-green-600">Value:</span> <strong>${opportunity.currency}${opportunity.estimated_value?.toLocaleString() || 'TBD'}</strong></div>
+                    <div><span class="text-green-600">Stage:</span> <strong>${opportunity.stage}</strong></div>
+                    <div><span class="text-green-600">Probability:</span> <strong>${Math.round(opportunity.probability * 100)}%</strong></div>
+                </div>
+                
+                ${opportunityMatch.merge_recommended ? `
+                    <div class="mt-3 p-2 bg-blue-50 rounded">
+                        <span class="text-blue-800 font-medium text-xs">💡 Merge recommended - similar opportunity detected</span>
+                    </div>
+                ` : ''}
+                
+                ${differencesHtml}
+            </div>
+        `;
+    }
+
+    handleFollowUpQuestion(question) {
+        // Set the question as input and trigger processing
+        const textInput = document.getElementById('textInput');
+        if (textInput) {
+            textInput.value = question;
+            // Show text input if hidden
+            const textInputArea = document.getElementById('textInputArea');
+            if (textInputArea.style.display === 'none') {
+                this.toggleTextInput();
+            }
+            // Auto-process the question
+            this.processText();
+        } else {
+            // Fallback: speak the question and start recording
+            this.speak(`You asked: ${question}. Please provide your answer.`, () => {
+                setTimeout(() => {
+                    this.startRecording();
+                }, 1000);
+            });
+        }
+    }
 }
 
 // Initialize the app when the page loads
+let app; // Global reference for onclick handlers
 document.addEventListener('DOMContentLoaded', () => {
-    new MastraVoiceApp();
+    app = new MastraVoiceApp();
 }); 
